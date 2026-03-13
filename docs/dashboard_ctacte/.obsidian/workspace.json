@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "04_guia_implementacion.md",
+                "file": "01_contexto_proyecto.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "04_guia_implementacion"
+              "title": "01_contexto_proyecto"
             }
           }
         ]
@@ -183,12 +183,12 @@
       "bases:Crear nueva base": false
     }
   },
-  "active": "b90427f52cba0000",
+  "active": "e63ef486daa8694b",
   "lastOpenFiles": [
-    "Bienvenido.md",
-    "04_guia_implementacion.md",
-    "03_especificacion_dashboard.md",
     "02_modelo_datos.md",
+    "04_guia_implementacion.md",
+    "Bienvenido.md",
+    "03_especificacion_dashboard.md",
     "01_contexto_proyecto.md",
     "Sin confirmar 77021.crdownload",
     "Sin confirmar 208726.crdownload",

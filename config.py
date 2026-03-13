@@ -41,39 +41,126 @@ MESES = {
     7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
 }
 
+# Nombres de entidades - mapeo por idtrabajo (mayoría de casos)
+# Solo 4 entidades necesitan combinación idtrabajo-envio (ver NOMBRES_ENTIDADES_ENVIO)
+NOMBRES_ENTIDADES = {
+    2: "Bioplanta",
+    3: "Diputados",
+    4: "Senadores",
+    6: "Ciudad de Mer",
+    9: "Guaymallen",
+    10: "Junin",
+    11: "La paz",
+    12: "Las heras-sag",
+    13: "Lujan",
+    14: "Maipu",
+    16: "Rivadavia",
+    17: "San Carlos",
+    18: "San Martin",
+    21: "Tupungato",
+    22: "Lavalle",
+    24: "Correos",
+    25: "Irrigacion",
+    26: "Telefonicos",
+    29: "UMTSA",
+    30: "Escuela Avella",
+    34: "Naranja",
+    39: "CEC",
+    46: "Visa",
+    47: "Mastercard",
+    49: "Hotel Uspallat",
+}
+
+# Nombres de entidades que requieren combinación idtrabajo-envio (solo 4 casos)
+NOMBRES_ENTIDADES_ENVIO = {
+    (5, 20): "CUAD AMAS",
+    (5, 21): "CUAD FATAG",
+    (7, 15): "Godoy Cruz- si",
+    (7, 24): "Godoy Cruz- a",
+    (8, 12): "Gral Alvear-sin",
+    (8, 23): "Gral Alvear-fat",
+    (20, 7): "Tunuyan-sindi",
+    (20, 23): "Tunuyan-fatag",
+}
+
 # Parámetros por entidad/envío
-# Clave: (idtrabajo, idenvio)
+# Para la mayoría: clave es solo idtrabajo (int)
+# Para 4 casos especiales: clave es tupla (idtrabajo, idenvio)
 # Valor: {"proc": % esperado procesamiento, "com": % esperado comisión o None}
 PARAMETROS_ENTIDAD = {
-    (25, 17): {"proc": 20.0, "com": None},
-    (6, 13): {"proc": 8.0, "com": 6.0},
+    # Entidades que solo requieren idtrabajo
+    2: {"proc": 6.0, "com": None},
+    3: {"proc": 0.0, "com": None},
+    4: {"proc": 0.0, "com": None},
+    6: {"proc": 8.0, "com": 6.0},
+    9: {"proc": 1.0, "com": 9.0},
+    10: {"proc": 1.0, "com": None},
+    11: {"proc": 4.0, "com": None},
+    12: {"proc": 3.0, "com": None},
+    13: {"proc": 0.0, "com": 8.0},
+    14: {"proc": 10.0, "com": None},
+    16: {"proc": 1.0, "com": None},
+    17: {"proc": 3.0, "com": None},
+    18: {"proc": 2.0, "com": None},
+    21: {"proc": 0.0, "com": 7.0},
+    22: {"proc": 0.0, "com": 5.0},
+    24: {"proc": 0.0, "com": None},
+    25: {"proc": 20.0, "com": None},
+    30: {"proc": 4.0, "com": None},
+    34: {"proc": 6.0, "com": None},
+    39: {"proc": 0.0, "com": None},
+    46: {"proc": 2.0, "com": None},
+    47: {"proc": 2.0, "com": None},
+    49: {"proc": 0.0, "com": None},
+    # Entidades que requieren combinación idtrabajo-envio
+    (5, 20): {"proc": 2.0, "com": None},
+    (5, 21): {"proc": 2.0, "com": None},
     (7, 15): {"proc": 1.0, "com": 10.0},
-    (14, 10): {"proc": 10.0, "com": None},
-    (9, 14): {"proc": 1.0, "com": 9.0},
-    (13, 11): {"proc": 0.0, "com": 8.0},
-    (21, 8): {"proc": 0.0, "com": 7.0},
+    (7, 24): {"proc": 2.0, "com": None},
     (8, 12): {"proc": 3.0, "com": 4.0},
-    (34, 33): {"proc": 6.0, "com": None},
-    (2, 18): {"proc": 6.0, "com": None},
+    (8, 23): {"proc": 3.0, "com": None},
     (20, 7): {"proc": 5.0, "com": None},
     (20, 23): {"proc": 5.0, "com": None},
-    (22, 29): {"proc": 0.0, "com": 5.0},
-    (30, 26): {"proc": 4.0, "com": None},
-    (11, 24): {"proc": 4.0, "com": None},
-    (8, 23): {"proc": 3.0, "com": None},
-    (17, 5): {"proc": 3.0, "com": None},
-    (12, 22): {"proc": 3.0, "com": None},
-    (47, 45): {"proc": 2.0, "com": None},
-    (7, 24): {"proc": 2.0, "com": None},
-    (46, 44): {"proc": 2.0, "com": None},
-    (18, 9): {"proc": 2.0, "com": None},
-    (5, 21): {"proc": 2.0, "com": None},
-    (5, 20): {"proc": 2.0, "com": None},
-    (16, 23): {"proc": 1.0, "com": None},
-    (10, 24): {"proc": 1.0, "com": None},
-    (24, 16): {"proc": 0.0, "com": None},
-    (39, 37): {"proc": 0.0, "com": None},
-    (3, 24): {"proc": 0.0, "com": None},
-    (4, 24): {"proc": 0.0, "com": None},
-    (49, 46): {"proc": 0.0, "com": None},
 }
+
+
+def get_nombre_entidad(idtrabajo, idenvio=None):
+    """
+    Obtiene el nombre de una entidad.
+    Primero busca en NOMBRES_ENTIDADES_ENVIO si se proporciona idenvio,
+    luego en NOMBRES_ENTIDADES por idtrabajo.
+    
+    Args:
+        idtrabajo: Identificador de la entidad
+        idenvio: Identificador del envío (opcional)
+    
+    Returns:
+        str: Nombre de la entidad o None si no se encuentra
+    """
+    if idenvio is not None:
+        key = (idtrabajo, idenvio)
+        if key in NOMBRES_ENTIDADES_ENVIO:
+            return NOMBRES_ENTIDADES_ENVIO[key]
+    
+    return NOMBRES_ENTIDADES.get(idtrabajo)
+
+
+def get_parametros_entidad(idtrabajo, idenvio=None):
+    """
+    Obtiene los parámetros (procesamiento y comisión) de una entidad.
+    Primero busca en combinación idtrabajo-envio si se proporciona idenvio,
+    luego solo por idtrabajo.
+    
+    Args:
+        idtrabajo: Identificador de la entidad
+        idenvio: Identificador del envío (opcional)
+    
+    Returns:
+        dict: {"proc": float o None, "com": float o None} o None si no se encuentra
+    """
+    if idenvio is not None:
+        key = (idtrabajo, idenvio)
+        if key in PARAMETROS_ENTIDAD:
+            return PARAMETROS_ENTIDAD[key]
+    
+    return PARAMETROS_ENTIDAD.get(idtrabajo)
