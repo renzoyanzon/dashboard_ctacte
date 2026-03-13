@@ -7,12 +7,24 @@ from dotenv import load_dotenv
 # Cargar variables de entorno desde .env
 load_dotenv()
 
-# Configuración de base de datos MySQL
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", "3306"))
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+# Determinar el entorno (development o production)
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+
+# Configuración de base de datos MySQL según el entorno
+if ENVIRONMENT == "production":
+    # Variables de producción
+    DB_HOST = os.getenv("DB_HOST_PROD", "localhost")
+    DB_PORT = int(os.getenv("DB_PORT_PROD", "3306"))
+    DB_NAME = os.getenv("DB_NAME_PROD")
+    DB_USER = os.getenv("DB_USER_PROD")
+    DB_PASSWORD = os.getenv("DB_PASSWORD_PROD")
+else:
+    # Variables de desarrollo (por defecto)
+    DB_HOST = os.getenv("DB_HOST_DEV", "localhost")
+    DB_PORT = int(os.getenv("DB_PORT_DEV", "3306"))
+    DB_NAME = os.getenv("DB_NAME_DEV")
+    DB_USER = os.getenv("DB_USER_DEV")
+    DB_PASSWORD = os.getenv("DB_PASSWORD_DEV")
 
 # Configuración de la aplicación
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"

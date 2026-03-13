@@ -1,0 +1,457 @@
+/* ============================================
+   Dashboard Estado de Cuenta Mutual - Estilos
+   ============================================ */
+
+/* Variables CSS - Colores del negocio */
+:root {
+    --color-verde: #1D9E75;      /* Al día */
+    --color-rojo: #E24B4A;       /* Deuda */
+    --color-ambar: #EF9F27;      /* Advertencia */
+    --color-azul: #378ADD;       /* Liquidado */
+    --color-gris: #B4B2A9;       /* Neutro */
+    --color-sidebar: #1e2130;    /* Fondo sidebar */
+    --color-sidebar-hover: #2a2f42; /* Hover sidebar */
+    --color-content-bg: #f4f6f9; /* Fondo área contenido */
+    
+    /* Tamaños de fuente */
+    --font-size-title: 20px;
+    --font-size-subtitle: 14px;
+    --font-size-kpi: 28px;
+}
+
+/* Importar fuente Inter desde Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ============================================
+   Estilos generales
+   ============================================ */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-content-bg);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+}
+
+h2 {
+    font-size: var(--font-size-title);
+}
+
+/* ============================================
+   Sidebar
+   ============================================ */
+.sidebar-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 250px;
+    padding: 24px 20px;
+    background-color: var(--color-sidebar);
+    overflow-y: auto;
+    border-right: none;
+    z-index: 1000;
+}
+
+.sidebar-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-container::-webkit-scrollbar-track {
+    background: var(--color-sidebar);
+}
+
+.sidebar-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+}
+
+.sidebar-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.sidebar-title {
+    color: white;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 32px;
+    margin-top: 8px;
+    letter-spacing: 0.5px;
+}
+
+.sidebar-divider {
+    border-color: rgba(255, 255, 255, 0.1);
+    margin: 24px 0;
+}
+
+/* Navegación del sidebar */
+.sidebar-nav {
+    margin-bottom: 24px;
+}
+
+.sidebar-nav .nav-link {
+    color: rgba(255, 255, 255, 0.8) !important;
+    padding: 12px 16px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+
+.sidebar-nav .nav-link:hover {
+    background-color: var(--color-sidebar-hover) !important;
+    color: white !important;
+    transform: translateX(2px);
+}
+
+.sidebar-nav .nav-link.active {
+    background-color: var(--color-azul) !important;
+    color: white !important;
+    font-weight: 600;
+}
+
+/* Filtros en sidebar */
+.sidebar-filters {
+    margin-top: 24px;
+}
+
+.sidebar-filters .card {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+}
+
+.sidebar-filters .card-header {
+    background-color: transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    font-weight: 600;
+    padding: 16px;
+}
+
+.sidebar-filters .card-body {
+    padding: 16px;
+}
+
+.sidebar-filters .form-label {
+    color: rgba(255, 255, 255, 0.9) !important;
+    font-weight: 500;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+/* Estilos para todos los dropdowns de Dash en el sidebar */
+.sidebar-filters .dash-dropdown,
+.sidebar-filters .Select,
+.sidebar-filters .Select-control {
+    width: 100% !important;
+}
+
+/* Estilos para el contenedor del dropdown */
+.sidebar-filters .Select-control {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    border-radius: 6px !important;
+    min-height: 38px !important;
+}
+
+.sidebar-filters .Select-control:hover {
+    border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* Texto del placeholder y valores seleccionados */
+.sidebar-filters .Select-placeholder,
+.sidebar-filters .Select-value-label,
+.sidebar-filters .Select-input > input {
+    color: white !important;
+}
+
+.sidebar-filters .Select-value {
+    color: white !important;
+}
+
+.sidebar-filters .Select-input {
+    color: white !important;
+}
+
+/* Menú desplegable */
+.sidebar-filters .Select-menu-outer {
+    background-color: var(--color-sidebar) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+    margin-top: 4px !important;
+    z-index: 9999 !important;
+}
+
+/* Opciones del menú */
+.sidebar-filters .Select-option {
+    color: rgba(255, 255, 255, 0.9) !important;
+    background-color: transparent !important;
+    padding: 10px 12px !important;
+}
+
+.sidebar-filters .Select-option:hover,
+.sidebar-filters .Select-option.is-focused {
+    background-color: var(--color-sidebar-hover) !important;
+    color: white !important;
+}
+
+.sidebar-filters .Select-option.is-selected {
+    background-color: var(--color-azul) !important;
+    color: white !important;
+}
+
+/* Focus del dropdown */
+.sidebar-filters .Select.is-focused > .Select-control {
+    border-color: var(--color-azul) !important;
+    box-shadow: 0 0 0 2px rgba(55, 138, 221, 0.2) !important;
+}
+
+/* Tags de multi-select */
+.sidebar-filters .Select-value-icon {
+    border-left: 1px solid rgba(255, 255, 255, 0.3) !important;
+    color: white !important;
+}
+
+.sidebar-filters .Select-value-icon:hover {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    color: white !important;
+}
+
+/* Icono de flecha */
+.sidebar-filters .Select-arrow-zone {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.sidebar-filters .Select-arrow {
+    border-color: rgba(255, 255, 255, 0.7) transparent transparent !important;
+}
+
+/* Estilos para dropdowns de Dash Core Components en sidebar */
+.sidebar-filters .dash-dropdown {
+    color: white;
+}
+
+.sidebar-filters .Select-control,
+.sidebar-filters .Select-input,
+.sidebar-filters .Select-placeholder,
+.sidebar-filters .Select-value,
+.sidebar-filters .Select-value-label {
+    color: white !important;
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.sidebar-filters .Select-input > input {
+    color: white !important;
+}
+
+.sidebar-filters .Select-menu-outer {
+    background-color: var(--color-sidebar) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.sidebar-filters .Select-option {
+    color: rgba(255, 255, 255, 0.9) !important;
+    background-color: transparent !important;
+}
+
+.sidebar-filters .Select-option:hover,
+.sidebar-filters .Select-option.is-focused {
+    background-color: var(--color-sidebar-hover) !important;
+    color: white !important;
+}
+
+.sidebar-filters .Select-option.is-selected {
+    background-color: var(--color-azul) !important;
+    color: white !important;
+}
+
+/* Estilos específicos para el contenedor del dropdown */
+.sidebar-filters .Select {
+    color: white;
+}
+
+.sidebar-filters .Select.is-focused > .Select-control {
+    border-color: var(--color-azul) !important;
+    box-shadow: 0 0 0 1px var(--color-azul) !important;
+}
+
+/* Estilos para multi-select tags */
+.sidebar-filters .Select-value-icon {
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.sidebar-filters .Select-value-icon:hover {
+    border-color: white !important;
+    background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.sidebar-filters .btn-primary {
+    background-color: var(--color-azul);
+    border-color: var(--color-azul);
+    font-weight: 500;
+    padding: 10px;
+}
+
+.sidebar-filters .btn-primary:hover {
+    background-color: #2a6fc7;
+    border-color: #2a6fc7;
+}
+
+/* ============================================
+   Área de contenido
+   ============================================ */
+.content-area {
+    margin-left: 250px;
+    padding: 24px;
+    min-height: 100vh;
+    background-color: var(--color-content-bg);
+}
+
+.page-title {
+    font-size: var(--font-size-title);
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.page-subtitle {
+    font-size: var(--font-size-subtitle);
+    color: #6c757d;
+    margin-bottom: 32px;
+}
+
+/* ============================================
+   Tarjetas KPI
+   ============================================ */
+.kpi-card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background-color: white;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.kpi-card .card-body {
+    padding: 20px;
+}
+
+.kpi-title {
+    font-size: var(--font-size-subtitle);
+    color: #6c757d;
+    margin-bottom: 8px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.kpi-value {
+    font-size: var(--font-size-kpi);
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.kpi-value.text-success {
+    color: var(--color-verde) !important;
+}
+
+.kpi-value.text-danger {
+    color: var(--color-rojo) !important;
+}
+
+.kpi-value.text-warning {
+    color: var(--color-ambar) !important;
+}
+
+.kpi-value.text-primary {
+    color: var(--color-azul) !important;
+}
+
+/* ============================================
+   Cards generales
+   ============================================ */
+.card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background-color: white;
+    margin-bottom: 24px;
+}
+
+.card-header {
+    background-color: white;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+    font-size: 16px;
+    padding: 16px 20px;
+    color: #2c3e50;
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* ============================================
+   Gráficos
+   ============================================ */
+.dash-graph {
+    border-radius: 8px;
+    background-color: white;
+}
+
+/* ============================================
+   Botones
+   ============================================ */
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 10px 20px;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background-color: var(--color-azul);
+    border-color: var(--color-azul);
+}
+
+.btn-primary:hover {
+    background-color: #2a6fc7;
+    border-color: #2a6fc7;
+}
+
+/* ============================================
+   Utilidades
+   ============================================ */
+.text-muted {
+    color: #6c757d !important;
+}
+
+/* Ajustes para dropdowns de Dash en el contenido */
+.content-area .Select-control {
+    background-color: white;
+    border-color: #dee2e6;
+}
+
+.content-area .Select-placeholder,
+.content-area .Select-value {
+    color: #495057;
+}
