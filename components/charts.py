@@ -473,3 +473,116 @@ def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
         fig.add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
         fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
         return fig
+
+
+def build_heatmap_cobertura(df: pd.DataFrame, anio: int | None = None) -> go.Figure:
+    """
+    Heatmap de cobertura para Control de carga.
+
+    Espera df con columnas:
+      - envio_nombre (str)
+      - cuota (1..12)
+      - estado_num (0 ok, 1 pendiente, 2 vencido, 3 sin_config/sin_datos)
+      - opcional: fecha_venc (date/str), estado (str), entidad_nombre (str),
+                 tiene_liquidacion (bool), tiene_cobranza (bool)
+    """
+    try:
+        if df is None or df.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay datos para mostrar", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=420)
+            return fig
+
+        dff = df.copy()
+        if anio is not None and "anio" in dff.columns:
+            dff = dff[dff["anio"] == int(anio)].copy()
+
+        # Ejes
+        meses = list(range(1, 13))
+        x_labels = [MESES[m] for m in meses]
+
+        # Y: envíos ordenados alfabéticamente
+        y_envios = sorted([e for e in dff["envio_nombre"].dropna().unique().tolist()])
+        if not y_envios:
+            y_envios = ["(sin envío)"]
+
+        # Matriz z inicial gris (3)
+        z = [[3 for _ in meses] for _ in y_envios]
+        custom = [[{} for _ in meses] for _ in y_envios]
+
+        # index helpers
+        y_idx = {name: i for i, name in enumerate(y_envios)}
+        x_idx = {m: j for j, m in enumerate(meses)}
+
+        # llenar
+        for _, r in dff.iterrows():
+            envio = r.get("envio_nombre") or "(sin envío)"
+            cuota = int(r.get("cuota")) if pd.notna(r.get("cuota")) else None
+            if envio not in y_idx or cuota not in x_idx:
+                continue
+            i = y_idx[envio]
+            j = x_idx[cuota]
+            estado_num = int(r.get("estado_num", 3))
+            z[i][j] = estado_num
+            custom[i][j] = {
+                "envio_nombre": envio,
+                "entidad_nombre": r.get("entidad_nombre"),
+                "anio": int(r.get("anio")) if pd.notna(r.get("anio")) else None,
+                "cuota": cuota,
+                "estado": r.get("estado"),
+                "fecha_venc": str(r.get("fecha_venc")) if r.get("fecha_venc") is not None else None,
+                "dias_vencido": int(r.get("dias_vencido")) if pd.notna(r.get("dias_vencido")) else None,
+                "tiene_liquidacion": bool(r.get("tiene_liquidacion")) if "tiene_liquidacion" in r else None,
+                "tiene_cobranza": bool(r.get("tiene_cobranza")) if "tiene_cobranza" in r else None,
+            }
+
+        # Colorscale discreta (0..3)
+        colorscale = [
+            [0.0, "#1D9E75"],   # 0 ok
+            [0.3333, "#1D9E75"],
+            [0.3334, "#EF9F27"],  # 1 pendiente
+            [0.6666, "#EF9F27"],
+            [0.6667, "#E24B4A"],  # 2 vencido
+            [0.9999, "#E24B4A"],
+            [1.0, "#B4B2A9"],     # 3 sin_config/sin_datos (pero queda fuera del rango con zmax=3)
+        ]
+
+        # Plotly colorscale necesita mapear bien hasta 3 → usamos zmin=0 zmax=3 y definimos escala por tramos:
+        colorscale = [
+            [0 / 3, "#1D9E75"],
+            [0.24 / 3, "#1D9E75"],
+            [1 / 3, "#EF9F27"],
+            [1.24 / 3, "#EF9F27"],
+            [2 / 3, "#E24B4A"],
+            [2.24 / 3, "#E24B4A"],
+            [3 / 3, "#B4B2A9"],
+            [1.0, "#B4B2A9"],
+        ]
+
+        fig = go.Figure(
+            go.Heatmap(
+                z=z,
+                x=x_labels,
+                y=y_envios,
+                zmin=0,
+                zmax=3,
+                colorscale=colorscale,
+                showscale=False,
+                customdata=custom,
+                hovertemplate="<b>%{y}</b><br>Mes: %{x}<br>Estado: %{z}<extra></extra>",
+            )
+        )
+        fig.update_layout(
+            title="Cobertura de cobranzas por envío",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=max(420, 26 * len(y_envios) + 120),
+            margin=dict(l=140, r=20, t=50, b=40),
+        )
+        return fig
+    except Exception as e:
+        print(f"Error en build_heatmap_cobertura(): {e}")
+        fig = go.Figure()
+        fig.add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=420)
+        return fig

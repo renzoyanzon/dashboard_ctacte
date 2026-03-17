@@ -5,6 +5,8 @@ Transformaciones de datos para el dashboard.
 from __future__ import annotations
 
 import pandas as pd
+from datetime import date
+import calendar
 
 from config import (
     TIPOS_LIQUIDACION_REAL,
@@ -13,6 +15,7 @@ from config import (
     MESES,
     TOLERANCIA_PCT,
     get_parametros_entidad,
+    VENCIMIENTOS,
 )
 
 
@@ -157,4 +160,107 @@ def build_pivot_entidad(df: pd.DataFrame, idtrabajo: int, idenvio: int, anio: in
         print(f"Error en build_pivot_entidad(): {e}")
         cols = ["Concepto", *[MESES[m] for m in range(1, 13)]]
         return pd.DataFrame(columns=cols), []
+
+
+def calcular_vencimiento(anio: int, cuota: int, desfasaje: int, dia_corte: int) -> date:
+    """
+    Calcula la fecha límite de pago para un período dado.
+    Si dia_corte = 31 y el mes no tiene 31 días, usa el último día del mes.
+    Maneja el desborde de meses (ej: cuota=11 + desfasaje=3 = mes 2 del año siguiente).
+    """
+    mes_venc = int(cuota) + int(desfasaje)
+    anio_venc = int(anio)
+    while mes_venc > 12:
+        mes_venc -= 12
+        anio_venc += 1
+
+    ultimo_dia = calendar.monthrange(anio_venc, mes_venc)[1]
+    dia_real = min(int(dia_corte), int(ultimo_dia))
+    return date(anio_venc, mes_venc, dia_real)
+
+
+def calcular_estado_vencimiento(anio: int, cuota: int, nombre_envio: str, tiene_cobranza: bool) -> str:
+    """
+    Retorna el estado de vencimiento de un período para un envío.
+
+    Estados posibles:
+        'ok'         → tiene cobranza registrada
+        'pendiente'  → no tiene cobranza pero aún no venció
+        'vencido'    → no tiene cobranza y ya pasó la fecha de vencimiento
+        'sin_config' → el envío no está en VENCIMIENTOS (no se puede calcular)
+    """
+    if bool(tiene_cobranza):
+        return "ok"
+
+    params = VENCIMIENTOS.get(str(nombre_envio))
+    if params is None:
+        return "sin_config"
+
+    fecha_venc = calcular_vencimiento(int(anio), int(cuota), int(params["desfasaje"]), int(params["dia_corte"]))
+    hoy = date.today()
+    if hoy > fecha_venc:
+        return "vencido"
+    return "pendiente"
+
+
+def detectar_faltantes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detecta faltantes por período para el universo de datos provisto.
+
+    - Liquidaciones reales: TIPOS_LIQUIDACION_REAL (IM, MI, IS)
+    - Cobranzas reales: TIPOS_COBRANZA_REAL (IT, IA, IC, IE)
+
+    Espera columnas mínimas:
+      - idtrabajo, idenvio (o envio), anio, cuota, tipo
+      - opcionales: entidad_nombre, envio_nombre (para reporting)
+
+    Retorna DataFrame con:
+      idtrabajo, idenvio, envio_nombre, entidad_nombre, anio, cuota,
+      tiene_liquidacion, tiene_cobranza
+    Solo períodos donde falta alguna de las dos.
+    """
+    try:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        dff = df.copy()
+        # Normalizar nombres de columnas
+        if "idenvio" not in dff.columns and "envio" in dff.columns:
+            dff["idenvio"] = dff["envio"]
+
+        for col in ["idtrabajo", "idenvio", "anio", "cuota"]:
+            if col in dff.columns:
+                dff[col] = pd.to_numeric(dff[col], errors="coerce")
+
+        base_cols = ["idtrabajo", "idenvio", "anio", "cuota"]
+        dff = dff[dff["tipo"].isin(TIPOS_LIQUIDACION_REAL + TIPOS_COBRANZA_REAL)].copy()
+
+        liquidaciones = dff[dff["tipo"].isin(TIPOS_LIQUIDACION_REAL)][base_cols].drop_duplicates()
+        liquidaciones["tiene_liquidacion"] = True
+
+        cobranzas = dff[dff["tipo"].isin(TIPOS_COBRANZA_REAL)][base_cols].drop_duplicates()
+        cobranzas["tiene_cobranza"] = True
+
+        todos_periodos = dff[base_cols].drop_duplicates()
+
+        res = (
+            todos_periodos.merge(liquidaciones, on=base_cols, how="left")
+            .merge(cobranzas, on=base_cols, how="left")
+        )
+        res["tiene_liquidacion"] = res["tiene_liquidacion"].fillna(False)
+        res["tiene_cobranza"] = res["tiene_cobranza"].fillna(False)
+
+        # preservar columnas de nombre si existen (join por claves)
+        if "envio_nombre" in df.columns:
+            names = df[base_cols + ["envio_nombre"]].drop_duplicates()
+            res = res.merge(names, on=base_cols, how="left")
+        if "entidad_nombre" in df.columns:
+            names = df[base_cols + ["entidad_nombre"]].drop_duplicates()
+            res = res.merge(names, on=base_cols, how="left")
+
+        falt = res[~(res["tiene_liquidacion"] & res["tiene_cobranza"])].copy()
+        return falt
+    except Exception as e:
+        print(f"Error en detectar_faltantes(): {e}")
+        return pd.DataFrame()
 

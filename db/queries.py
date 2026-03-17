@@ -407,3 +407,89 @@ def get_saldo_acumulado_por_periodo(anio=None, entidades=None):
     finally:
         if conn:
             conn.close()
+
+
+def get_envios_trabajo():
+    """
+    Verificación: retorna los envíos (nombres) distintos.
+
+    Nota: en este proyecto evitamos depender de la tabla `trabajo` (puede no tener
+    columnas `envio`/`nombre`). Por eso, construimos los nombres a partir de las
+    combinaciones (idtrabajo, envio) existentes en `ctactetrabajo` y el mapeo
+    de `config.get_nombre_entidad()`.
+
+    Returns:
+        DataFrame con columna: envio
+    """
+    sql = """
+        SELECT DISTINCT
+            c.idtrabajo,
+            c.envio
+        FROM ctactetrabajo c
+        ORDER BY c.idtrabajo, c.envio
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        df = pd.read_sql(sql, conn)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["envio"])
+
+        df["envio"] = df.apply(lambda r: get_nombre_entidad(r["idtrabajo"], r["envio"]), axis=1)
+        df = df[df["envio"].notna()].copy()
+        df = df[["envio"]].drop_duplicates().sort_values("envio").reset_index(drop=True)
+        return df
+    except Exception as e:
+        print(f"Error en get_envios_trabajo(): {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_movimientos_control(anio: int):
+    """
+    Obtiene movimientos necesarios para la página Control de carga en un año.
+
+    Incluye nombre de entidad y nombre de envío desde el mapeo de config.py
+    (sin depender de tabla `trabajo`).
+
+    Returns:
+        DataFrame con columnas mínimas:
+          idtrabajo, idenvio, anio, cuota, tipo, clase, debe, haber, fecha,
+          entidad_nombre, envio_nombre
+    """
+    sql = """
+        SELECT
+            c.idtrabajo,
+            c.envio AS idenvio,
+            c.anio,
+            c.cuota,
+            c.tipo,
+            c.clase,
+            c.debe,
+            c.haber,
+            c.fecha
+        FROM ctactetrabajo c
+        WHERE c.anio = %s
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        df = pd.read_sql(sql, conn, params=[int(anio)])
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # Mapear nombre de envío/entidad según config (compatibles con VENCIMIENTOS)
+        df["envio_nombre"] = df.apply(lambda r: get_nombre_entidad(r["idtrabajo"], r["idenvio"]), axis=1)
+        # Para esta página, "Entidad" y "Envío" se muestran igual (nombre configurado)
+        df["entidad_nombre"] = df["envio_nombre"]
+        return df
+    except Exception as e:
+        print(f"Error en get_movimientos_control(): {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()

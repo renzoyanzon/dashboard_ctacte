@@ -65,7 +65,6 @@ NOMBRES_ENTIDADES = {
     11: "La paz",
     12: "Las heras-sagam",
     13: "Lujan",
-    14: "Maipu",
     16: "Rivadavia",
     17: "San Carlos",
     18: "San Martin",
@@ -94,6 +93,10 @@ NOMBRES_ENTIDADES_ENVIO = {
     (8, 23): "Gral Alvear-fatag",
     (20, 7): "Tunuyan-sindicato",
     (20, 23): "Tunuyan-fatag",
+    (14,10): "Maipu SOEMM",
+    (14,54):"Maipu lotes",
+    (16,23):"Rivadavia FATAG",
+    (16,6):"Rivadavia- sindicato",
 }
 
 # Parámetros por entidad/envío
@@ -111,8 +114,6 @@ PARAMETROS_ENTIDAD = {
     11: {"proc": 4.0, "com": None},
     12: {"proc": 3.0, "com": None},
     13: {"proc": 0.0, "com": 8.0},
-    14: {"proc": 10.0, "com": None},
-    16: {"proc": 1.0, "com": None},
     17: {"proc": 3.0, "com": None},
     18: {"proc": 2.0, "com": None},
     21: {"proc": 0.0, "com": 7.0},
@@ -134,6 +135,47 @@ PARAMETROS_ENTIDAD = {
     (8, 23): {"proc": 3.0, "com": None},
     (20, 7): {"proc": 5.0, "com": None},
     (20, 23): {"proc": 5.0, "com": None},
+    (14,10): {"proc": 10.0, "com": None},
+    (14,54): {"proc": 10.0, "com": None},
+    (16,23): {"proc": 1.0, "com": None},
+}
+
+# Parámetros de vencimiento por envío (clave: nombre del envío)
+# Usado en la página "Control de carga" para determinar pendiente/vencido.
+VENCIMIENTOS = {
+    "CEC": {"desfasaje": 1, "dia_corte": 30},
+    "Correos": {"desfasaje": 1, "dia_corte": 15},
+    "Escuela Avellaneda": {"desfasaje": 2, "dia_corte": 31},
+    "Hotel Uspallata": {"desfasaje": 1, "dia_corte": 20},
+    "Irrigacion": {"desfasaje": 1, "dia_corte": 15},
+    "Junin": {"desfasaje": 1, "dia_corte": 30},
+    "La paz": {"desfasaje": 1, "dia_corte": 25},
+    "Las heras-sagam": {"desfasaje": 1, "dia_corte": 15},
+    "Lavalle": {"desfasaje": 2, "dia_corte": 30},
+    "Lujan": {"desfasaje": 1, "dia_corte": 20},
+    "Maipu": {"desfasaje": 1, "dia_corte": 25},
+    "Mastercard": {"desfasaje": 1, "dia_corte": 30},
+    "Naranja": {"desfasaje": 1, "dia_corte": 20},
+    "Rivadavia": {"desfasaje": 2, "dia_corte": 25},
+    "San Carlos": {"desfasaje": 0, "dia_corte": 30},
+    "San Martin": {"desfasaje": 1, "dia_corte": 31},
+    "Tupungato": {"desfasaje": 1, "dia_corte": 30},
+    "UMTSA": {"desfasaje": 1, "dia_corte": 30},
+    "Visa": {"desfasaje": 1, "dia_corte": 15},
+    "Bioplanta": {"desfasaje": 2, "dia_corte": 30},
+    "Ciudad de Mza": {"desfasaje": 1, "dia_corte": 15},
+    "Cocheria Alarcon": {"desfasaje": 1, "dia_corte": 30},
+    "CUAD AMAS": {"desfasaje": 3, "dia_corte": 31},
+    "CUAD FATAG": {"desfasaje": 3, "dia_corte": 31},
+    "Diputados": {"desfasaje": 2, "dia_corte": 10},
+    "Godoy Cruz- amas": {"desfasaje": 1, "dia_corte": 20},
+    "Godoy Cruz- sindicato": {"desfasaje": 2, "dia_corte": 15},
+    "Gral Alvear-fatag": {"desfasaje": 1, "dia_corte": 30},
+    "Gral Alvear-sindicato": {"desfasaje": 3, "dia_corte": 30},
+    "Guaymallen": {"desfasaje": 2, "dia_corte": 25},
+    "Senadores": {"desfasaje": 2, "dia_corte": 15},
+    "Tunuyan-fatag": {"desfasaje": 1, "dia_corte": 15},
+    "Tunuyan-sindicato": {"desfasaje": 2, "dia_corte": 30},
 }
 
 
