@@ -111,7 +111,6 @@ Para simplificar filtros y visualizaciones, agrupar así:
 **Ingresos / Cobranzas** (pagos recibidos): tipos `IT`, `IA`, `IC`, `IE`
 
 **Egresos** (devoluciones y comisiones pagadas): tipos `ET`, `EC`, `EE`
-	Nota: las devoluciones se deben mostrar separado de las comisiones
 
 **Ajustes** (correcciones manuales): tipos `AN`, `AP`
 
@@ -317,3 +316,129 @@ Ejemplos:
 - Guaymallén espera 1% de procesamiento → aceptable entre -1% y 3%
 - Ciudad Mza. espera 8% → aceptable entre 6% y 10%
 - Si el real cae fuera de ese rango → celda roja en el dashboard
+
+---
+
+## Parámetros de vencimiento por envío
+
+Cada envío tiene un **desfasaje en meses** (cuántos meses después del período se espera el pago) y un **día de corte** (hasta qué día del mes siguiente se acepta el pago sin alarma).
+
+### Lógica de vencimiento
+
+```
+fecha_vencimiento = date(anio_periodo, cuota_periodo + desfasaje, dia_corte)
+```
+
+**Ejemplo — Irrigación** (desfasaje 1, corte día 15):
+- Período 01/2026 → vence el 15/02/2026
+- Si hoy es 16/02/2026 y no hay cobranza registrada → ALARMA
+
+**Ejemplo — San Carlos** (desfasaje 0, corte día 30):
+- Período 02/2026 → vence el 28/02/2026 (último día del mes)
+- Cancela el mismo mes del período, sin desfasaje
+
+**Ejemplo — CUAD AMAS** (desfasaje 3, corte día 31):
+- Período 01/2026 → vence el 30/04/2026 (día 31 = último día del mes)
+
+> Cuando el día de corte es 31 y el mes no tiene 31 días, usar el último día del mes.
+
+### Diccionario VENCIMIENTOS para config.py
+
+Clave: nombre del envío (campo `envio` en la tabla `trabajo` o nombre configurado en Cursor)
+Valor: `{"desfasaje": meses, "dia_corte": día}`
+
+```python
+VENCIMIENTOS = {
+    "CEC":                    {"desfasaje": 1, "dia_corte": 30},
+    "Correos":                {"desfasaje": 1, "dia_corte": 15},
+    "Escuela Avellaneda":     {"desfasaje": 2, "dia_corte": 31},
+    "Hotel Uspallata":        {"desfasaje": 1, "dia_corte": 20},
+    "Irrigacion":             {"desfasaje": 1, "dia_corte": 15},
+    "Junin":                  {"desfasaje": 1, "dia_corte": 30},
+    "La paz":                 {"desfasaje": 1, "dia_corte": 25},
+    "Las heras-sagam":        {"desfasaje": 1, "dia_corte": 15},
+    "Lavalle":                {"desfasaje": 2, "dia_corte": 30},
+    "Lujan":                  {"desfasaje": 1, "dia_corte": 20},
+    "Maipu":                  {"desfasaje": 1, "dia_corte": 25},
+    "Mastercard":             {"desfasaje": 1, "dia_corte": 30},
+    "Naranja":                {"desfasaje": 1, "dia_corte": 20},
+    "Rivadavia":              {"desfasaje": 2, "dia_corte": 25},
+    "San Carlos":             {"desfasaje": 0, "dia_corte": 30},
+    "San Martin":             {"desfasaje": 1, "dia_corte": 31},
+    "Tupungato":              {"desfasaje": 1, "dia_corte": 30},
+    "UMTSA":                  {"desfasaje": 1, "dia_corte": 30},
+    "Visa":                   {"desfasaje": 1, "dia_corte": 15},
+    "Bioplanta":              {"desfasaje": 2, "dia_corte": 30},
+    "Ciudad de Mza":          {"desfasaje": 1, "dia_corte": 15},
+    "Cocheria Alarcon":       {"desfasaje": 1, "dia_corte": 30},
+    "CUAD AMAS":              {"desfasaje": 3, "dia_corte": 31},
+    "CUAD FATAG":             {"desfasaje": 3, "dia_corte": 31},
+    "Diputados":              {"desfasaje": 2, "dia_corte": 10},
+    "Godoy Cruz- amas":       {"desfasaje": 1, "dia_corte": 20},
+    "Godoy Cruz- sindicato":  {"desfasaje": 2, "dia_corte": 15},
+    "Gral Alvear-fatag":      {"desfasaje": 1, "dia_corte": 30},
+    "Gral Alvear-sindicato":  {"desfasaje": 3, "dia_corte": 30},
+    "Guaymallen":             {"desfasaje": 2, "dia_corte": 25},
+    "Senadores":              {"desfasaje": 2, "dia_corte": 15},
+    "Tunuyan-fatag":          {"desfasaje": 1, "dia_corte": 15},
+    "Tunuyan-sindicato":      {"desfasaje": 2, "dia_corte": 30},
+}
+```
+
+### Función de cálculo de vencimiento para transformations.py
+
+```python
+from datetime import date
+import calendar
+
+def calcular_vencimiento(anio, cuota, desfasaje, dia_corte):
+    """
+    Calcula la fecha límite de pago para un período dado.
+    Si dia_corte = 31 y el mes no tiene 31 días, usa el último día del mes.
+    Maneja el desborde de meses (ej: cuota=11 + desfasaje=3 = mes 2 del año siguiente).
+    """
+    mes_venc = cuota + desfasaje
+    anio_venc = anio
+    while mes_venc > 12:
+        mes_venc -= 12
+        anio_venc += 1
+
+    ultimo_dia = calendar.monthrange(anio_venc, mes_venc)[1]
+    dia_real = min(dia_corte, ultimo_dia)
+    return date(anio_venc, mes_venc, dia_real)
+
+
+def calcular_estado_vencimiento(anio, cuota, nombre_envio, tiene_cobranza):
+    """
+    Retorna el estado de vencimiento de un período para un envío.
+
+    Estados posibles:
+        'ok'         → tiene cobranza registrada
+        'pendiente'  → no tiene cobranza pero aún no venció
+        'vencido'    → no tiene cobranza y ya pasó la fecha de vencimiento
+        'sin_config' → el envío no está en VENCIMIENTOS (no se puede calcular)
+    """
+    from config import VENCIMIENTOS
+    if tiene_cobranza:
+        return 'ok'
+
+    params = VENCIMIENTOS.get(nombre_envio)
+    if params is None:
+        return 'sin_config'
+
+    fecha_venc = calcular_vencimiento(anio, cuota, params['desfasaje'], params['dia_corte'])
+    hoy = date.today()
+
+    if hoy > fecha_venc:
+        return 'vencido'
+    return 'pendiente'
+```
+
+### Estados y colores en el dashboard
+
+| Estado | Color | Descripción |
+|--------|-------|-------------|
+| `ok` | 🟢 Verde `#1D9E75` | Cobranza registrada |
+| `pendiente` | 🟡 Ámbar `#EF9F27` | Sin cobranza pero dentro de plazo |
+| `vencido` | 🔴 Rojo `#E24B4A` | Sin cobranza y fuera de plazo |
+| `sin_config` | ⬜ Gris `#B4B2A9` | Envío sin parámetros configurados |

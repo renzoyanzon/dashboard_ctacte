@@ -34,18 +34,6 @@ def build_filtros():
     return dbc.Card([
         dbc.CardHeader("Filtros", className="fw-bold"),
         dbc.CardBody([
-            html.Label("Entidad", className="form-label mb-2"),
-            dcc.Dropdown(
-                id='filtro-entidad',
-                options=opciones_entidades,
-                placeholder="Seleccionar entidad(es)...",
-                multi=True,
-                className="mb-3",
-                style={
-                    'color': 'white',
-                    'backgroundColor': 'rgba(255, 255, 255, 0.1)'
-                }
-            ),
             html.Label("Año", className="form-label mb-2"),
             dcc.Dropdown(
                 id='filtro-anio',

@@ -34,6 +34,14 @@ body {
     margin: 0;
     padding: 0;
     background-color: var(--color-content-bg);
+    overflow-x: hidden;
+}
+
+/* Asegurar que el contenedor principal no limite el ancho */
+.container-fluid {
+    max-width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -53,7 +61,7 @@ h2 {
     top: 0;
     left: 0;
     height: 100vh;
-    width: 250px;
+    width: 200px;
     padding: 24px 20px;
     background-color: var(--color-sidebar);
     overflow-y: auto;
@@ -314,10 +322,28 @@ h2 {
    Área de contenido
    ============================================ */
 .content-area {
-    margin-left: 250px;
+    position: fixed;
+    left: 420px; /* 200px sidebar + 220px panel entidades */
+    right: 0;
+    top: 0;
+    bottom: 0;
     padding: 24px;
-    min-height: 100vh;
     background-color: var(--color-content-bg);
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+/* Override de Bootstrap Container para que no limite el ancho */
+.content-area .container,
+.content-area .container-fluid {
+    max-width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* Ajuste cuando el panel de entidades no está visible */
+body:not(:has(.entity-list-panel)) .content-area {
+    left: 200px; /* Solo sidebar */
 }
 
 .page-title {
@@ -454,4 +480,77 @@ h2 {
 .content-area .Select-placeholder,
 .content-area .Select-value {
     color: #495057;
+}
+
+/* ============================================
+   Panel de lista de entidades
+   ============================================ */
+.entity-list-panel {
+    position: fixed;
+    left: 200px;
+    top: 0;
+    width: 220px;
+    height: 100vh;
+    background-color: white;
+    border-right: 1px solid #dee2e6;
+    overflow-y: auto;
+    z-index: 999;
+}
+
+.entity-list-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.entity-list-panel::-webkit-scrollbar-track {
+    background: #f8f9fa;
+}
+
+.entity-list-panel::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.entity-list-panel::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.entity-list-header {
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #2c3e50;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.entity-list-group {
+    border: none;
+}
+
+.entity-list-item {
+    cursor: pointer;
+    padding: 8px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 12px;
+    transition: all 0.15s ease;
+    background-color: white;
+    color: #2c3e50;
+    border-left: 4px solid transparent;
+}
+
+.entity-list-item:hover {
+    background-color: #f4f6f9;
+}
+
+.entity-list-item.active {
+    background-color: var(--color-verde);
+    color: white;
+    border-left: 4px solid #0f6e56;
+    font-weight: 500;
+}
+
+.entity-list-item.active:hover {
+    background-color: #1a8a6a;
 }

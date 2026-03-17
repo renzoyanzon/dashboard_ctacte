@@ -180,29 +180,45 @@ Esta pestaña está dentro del detalle de entidad y muestra cómo se compone lo 
 
 Esta vista es la más importante para el control operativo.
 
-### Heatmap de cobertura
+### Heatmap de cobertura y vencimientos
 
-- Eje X: períodos (meses del año)
-- Eje Y: entidades
-- Celda: 
-  - 🟢 Verde: liquidación + cobranza presentes
-  - 🟡 Amarillo: solo liquidación (falta cobranza)
-  - 🔴 Rojo: ni liquidación ni cobranza (ambas faltantes)
-  - ⬜ Gris: entidad no activa en ese período
-- Plotly: `go.Heatmap` con colorscale personalizada o `px.imshow`
-- Click en celda → muestra detalle del período/entidad
+- Eje X: períodos (meses del año, formato "Ene 2026")
+- Eje Y: envíos (nombre del envío, no de la entidad)
+- Cada celda combina dos dimensiones: si tiene cobranza Y si venció el plazo
 
-### Tabla: Faltantes detectados
+| Color | Estado | Condición |
+|-------|--------|-----------|
+| 🟢 Verde | ok | Cobranza registrada |
+| 🟡 Ámbar | pendiente | Sin cobranza, dentro del plazo de vencimiento |
+| 🔴 Rojo | vencido | Sin cobranza y ya pasó la fecha límite |
+| ⬜ Gris | sin datos / sin config | Sin actividad o envío sin parámetros |
 
-Lista de todos los períodos con datos incompletos:
+- La fecha de vencimiento se calcula con `calcular_vencimiento()` usando los parámetros de `VENCIMIENTOS` en config.py
+- La fecha de hoy se obtiene con `date.today()` del servidor
+- Plotly: `go.Heatmap` con colorscale personalizada (4 valores: 0=verde, 1=ámbar, 2=rojo, 3=gris)
+- Click en celda → muestra detalle: período, envío, fecha de vencimiento, días vencido (si aplica)
+- El heatmap debe poder filtrarse por año
 
-| Entidad | Período | Liquidación | Cobranza | Acción sugerida |
-|---------|---------|-------------|----------|-----------------|
-| Guaymallén | Feb 2026 | ✅ Cargada | ❌ Faltante | Cargar cobranza |
-| Las Heras | Mar 2026 | ❌ Faltante | ❌ Faltante | Verificar ambas |
+### Tabla: Faltantes y vencimientos
 
+Lista de todos los períodos con cobranza faltante, ordenados por urgencia:
+
+| Envío | Entidad | Período | Liquidación | Cobranza | Vencimiento | Días vencido | Estado |
+|-------|---------|---------|-------------|----------|-------------|--------------|--------|
+| Sindicato Muni. Guaymallen | Guaymallen | Feb 2026 | ✅ | ❌ | 25/04/2026 | 0 (vence hoy) | 🟡 Pendiente |
+| Sindicato Muni. Ciudad Mza | Ciudad Mza | Ene 2026 | ✅ | ❌ | 15/02/2026 | 45 días | 🔴 Vencido |
+
+- Ordenada por estado (vencidos primero) y luego por días vencido descendente
+- "Días vencido" = date.today() - fecha_vencimiento (negativo si aún no venció)
 - Exportable a Excel
-- Ordenable por entidad o período
+- Filtrable por estado (solo vencidos / solo pendientes / todos)
+
+### KPIs de control (actualizados)
+
+- Total vencidos: cantidad de períodos con estado `vencido`
+- Total pendientes: cantidad de períodos con estado `pendiente`
+- Próximo vencimiento: envío + fecha del vencimiento más cercano sin cobranza
+- Porcentaje al día: (períodos ok / total períodos activos) × 100
 
 ### KPIs de control
 

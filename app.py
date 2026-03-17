@@ -5,8 +5,9 @@ Punto de entrada con Dash, Bootstrap y navegación lateral.
 import dash
 from dash import dcc, html
 import dash_bootstrap_components as dbc
-from pages.inicio import layout as layout_inicio
+from pages.inicio import layout as layout_inicio, register_callbacks as register_inicio_callbacks
 from components.filters import build_filtros
+from components.entity_list import build_entity_list
 
 # Inicializar la aplicación Dash con tema Bootstrap
 app = dash.Dash(
@@ -41,42 +42,66 @@ app.layout = dbc.Container([
                 
                 html.Hr(className="sidebar-divider"),
                 
-                # Filtros globales
+                # Filtros globales (sin dropdown de entidades)
                 html.Div(build_filtros(), className="sidebar-filters"),
                 
             ], className="sidebar-container")
-        ], width=3, style={'padding': 0}),
+        ], width=2, style={'padding': 0}),
+        
+        # Panel de entidades (solo visible en página de inicio)
+        dbc.Col([
+            html.Div(id='entity-list-container', style={'display': 'none'})
+        ], width=2, style={'padding': 0}),
         
         # Contenido principal a la derecha
         dbc.Col([
             html.Div(id='page-content', className="content-area")
-        ], width=9, style={'padding': 0})
+        ], width=8, style={'padding': 0})
     ])
 ], fluid=True, style={'padding': 0})
 
 
-# Callback para cambiar el contenido según la URL
+# Registrar callbacks de las páginas
+register_inicio_callbacks(app)
+
+# Callback para cambiar el contenido según la URL y mostrar/ocultar panel de entidades
 @app.callback(
-    dash.dependencies.Output('page-content', 'children'),
+    [
+        dash.dependencies.Output('page-content', 'children'),
+        dash.dependencies.Output('entity-list-container', 'children'),
+        dash.dependencies.Output('entity-list-container', 'style')
+    ],
     [dash.dependencies.Input('url', 'pathname')]
 )
 def display_page(pathname):
     """
     Renderiza el contenido según la ruta seleccionada.
-    Por ahora solo la página de inicio está implementada.
+    Muestra el panel de entidades solo en la página de inicio.
     """
     if pathname == '/entidad':
-        return html.Div([
-            html.H2("Por Entidad"),
-            html.P("Página en construcción - Detalle por entidad")
-        ])
+        return (
+            html.Div([
+                html.H2("Por Entidad"),
+                html.P("Página en construcción - Detalle por entidad")
+            ]),
+            None,
+            {'display': 'none'}
+        )
     elif pathname == '/control':
-        return html.Div([
-            html.H2("Control de Carga"),
-            html.P("Página en construcción - Control de faltantes")
-        ])
+        return (
+            html.Div([
+                html.H2("Control de Carga"),
+                html.P("Página en construcción - Control de faltantes")
+            ]),
+            None,
+            {'display': 'none'}
+        )
     else:  # pathname == '/' o cualquier otra ruta
-        return layout_inicio()
+        return (
+            layout_inicio(),
+            build_entity_list(),
+            {'display': 'block'}
+        )
 
 
 if __name__ == '__main__':
