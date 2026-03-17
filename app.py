@@ -6,6 +6,7 @@ import dash
 from dash import dcc, html
 import dash_bootstrap_components as dbc
 from pages.inicio import layout as layout_inicio, register_callbacks as register_inicio_callbacks
+from pages.entidad import layout as layout_entidad, register_callbacks as register_entidad_callbacks
 from components.filters import build_filtros
 from components.entity_list import build_entity_list
 
@@ -63,6 +64,7 @@ app.layout = dbc.Container([
 
 # Registrar callbacks de las páginas
 register_inicio_callbacks(app)
+register_entidad_callbacks(app)
 
 # Callback para cambiar el contenido según la URL y mostrar/ocultar panel de entidades
 @app.callback(
@@ -80,10 +82,7 @@ def display_page(pathname):
     """
     if pathname == '/entidad':
         return (
-            html.Div([
-                html.H2("Por Entidad"),
-                html.P("Página en construcción - Detalle por entidad")
-            ]),
+            layout_entidad(),
             None,
             {'display': 'none'}
         )

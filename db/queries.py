@@ -244,10 +244,15 @@ def get_movimientos_entidad(idtrabajo, idenvio, anio=None, cuota=None):
     
     where_clause = "WHERE " + " AND ".join(conditions)
     
+    # Traer nombre completo del usuario (si existe) con LEFT JOIN
+    # usuario.idus = ctactetrabajo.usuario
     sql = f"""
         SELECT 
-            c.*
+            c.*,
+            CONCAT(u.nombre, ' ', u.apellido) AS usuario_nombre
         FROM ctactetrabajo c
+        LEFT JOIN usuario u
+            ON u.idus = c.usuario
         {where_clause}
         ORDER BY c.fecha DESC, c.id DESC
     """

@@ -106,7 +106,7 @@ PARAMETROS_ENTIDAD = {
     3: {"proc": 0.0, "com": None},
     4: {"proc": 0.0, "com": None},
     6: {"proc": 8.0, "com": 6.0},
-    9: {"proc": 1.0, "com": 9.0},
+    9: {"proc": 1.2, "com": 9.0},
     10: {"proc": 1.0, "com": None},
     11: {"proc": 4.0, "com": None},
     12: {"proc": 3.0, "com": None},

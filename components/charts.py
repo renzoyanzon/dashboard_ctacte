@@ -2,8 +2,9 @@
 Componentes de gráficos Plotly para el dashboard.
 """
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
-from config import MESES
+from config import MESES, TIPOS_LIQUIDACION_REAL, TIPOS_COBRANZA_REAL, CLASES_COMISION
 
 
 def formatear_moneda(valor):
@@ -112,8 +113,8 @@ def build_ranking_saldo(df):
             x=0.5, y=0.5, showarrow=False
         )
         fig.update_layout(
-            paper_bgcolor='transparent',
-            plot_bgcolor='transparent',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
             height=400
         )
         return fig
@@ -198,8 +199,8 @@ def build_cobrado_vs_liquidado_global(df):
             x=0.5, y=0.5, showarrow=False
         )
         fig.update_layout(
-            paper_bgcolor='transparent',
-            plot_bgcolor='transparent',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
             height=400
         )
         return fig
@@ -291,8 +292,184 @@ def build_evolucion_saldo(df):
             x=0.5, y=0.5, showarrow=False
         )
         fig.update_layout(
-            paper_bgcolor='transparent',
-            plot_bgcolor='transparent',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
             height=400
         )
+        return fig
+
+
+def build_liquidaciones_vs_cobros(df: pd.DataFrame) -> go.Figure:
+    """
+    Barras agrupadas por período para una entidad (Liquidado vs Cobrado).
+
+    Espera df con columnas: anio, cuota, liquidado, cobrado
+    """
+    # Reutiliza el builder global (misma estructura de datos)
+    return build_cobrado_vs_liquidado_global(df)
+
+
+def build_torta_subgrupos(df: pd.DataFrame, anio: int | None) -> go.Figure:
+    """
+    Donut de liquidaciones por subgrupo/clase (solo TIPOS_LIQUIDACION_REAL).
+
+    - Agrupa por `clase`
+    - Suma `debe`
+    """
+    try:
+        if df is None or df.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay datos disponibles", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+            return fig
+
+        dff = df.copy()
+        if anio is not None:
+            dff = dff[dff["anio"] == int(anio)]
+
+        dff = dff[dff["tipo"].isin(TIPOS_LIQUIDACION_REAL)].copy()
+        if dff.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay liquidaciones", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+            return fig
+
+        grp = dff.groupby("clase", dropna=False)["debe"].sum().reset_index()
+        grp["clase"] = grp["clase"].fillna("Sin clase")
+
+        fig = px.pie(
+            grp,
+            names="clase",
+            values="debe",
+            hole=0.55,
+        )
+        fig.update_traces(textposition="inside", textinfo="percent+label")
+        fig.update_layout(
+            title="Liquidaciones por subgrupo",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=360,
+            margin=dict(l=10, r=10, t=50, b=10),
+            legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="left", x=0),
+        )
+        return fig
+    except Exception as e:
+        print(f"Error en build_torta_subgrupos(): {e}")
+        fig = go.Figure()
+        fig.add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+        return fig
+
+
+def build_torta_formas_pago(df: pd.DataFrame, anio: int | None) -> go.Figure:
+    """
+    Donut de cobranzas por forma de pago (solo TIPOS_COBRANZA_REAL).
+
+    Mapeo:
+      - IT: Transferencia
+      - IA: FDC
+      - IC: Cheque
+      - IE: Efectivo
+
+    Agrupa por `tipo` y suma `haber`.
+    """
+    try:
+        if df is None or df.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay datos disponibles", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+            return fig
+
+        dff = df.copy()
+        if anio is not None:
+            dff = dff[dff["anio"] == int(anio)]
+
+        dff = dff[dff["tipo"].isin(TIPOS_COBRANZA_REAL)].copy()
+        if dff.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay cobranzas", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+            return fig
+
+        mapa = {"IT": "Transferencia", "IA": "FDC", "IC": "Cheque", "IE": "Efectivo"}
+        grp = dff.groupby("tipo")["haber"].sum().reset_index()
+        grp["forma"] = grp["tipo"].map(mapa).fillna(grp["tipo"])
+
+        fig = px.pie(grp, names="forma", values="haber", hole=0.55)
+        fig.update_traces(textposition="inside", textinfo="percent+label")
+        fig.update_layout(
+            title="Cobranzas por forma de pago",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=360,
+            margin=dict(l=10, r=10, t=50, b=10),
+            legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="left", x=0),
+        )
+        return fig
+    except Exception as e:
+        print(f"Error en build_torta_formas_pago(): {e}")
+        fig = go.Figure()
+        fig.add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+        return fig
+
+
+def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
+    """
+    Barras de comisiones (clases GC/CO) por período.
+
+    Suma `debe` para filas donde `clase` está en CLASES_COMISION.
+    """
+    try:
+        if df is None or df.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay datos disponibles", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+            return fig
+
+        dff = df.copy()
+        if anio is not None:
+            dff = dff[dff["anio"] == int(anio)]
+
+        dff = dff[dff["clase"].isin(CLASES_COMISION)].copy()
+        if dff.empty:
+            fig = go.Figure()
+            fig.add_annotation(text="No hay comisiones", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+            return fig
+
+        grp = (
+            dff.groupby(["anio", "cuota"], as_index=False)["debe"]
+            .sum()
+            .sort_values(["anio", "cuota"])
+        )
+        grp["periodo"] = grp.apply(lambda r: f"{MESES.get(int(r['cuota']), r['cuota'])} {int(r['anio'])}", axis=1)
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=grp["periodo"],
+                y=grp["debe"],
+                name="Comisiones",
+                marker_color="#EF9F27",
+                hovertemplate="<b>%{x}</b><br>Comisiones: $%{y:,.2f}<extra></extra>",
+            )
+        )
+        fig.update_layout(
+            title="Comisiones por período",
+            xaxis_title="Período",
+            yaxis_title="Monto ($)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=360,
+            margin=dict(l=30, r=10, t=50, b=90),
+            xaxis=dict(tickangle=-45),
+            showlegend=False,
+        )
+        return fig
+    except Exception as e:
+        print(f"Error en build_barras_comisiones(): {e}")
+        fig = go.Figure()
+        fig.add_annotation(text=f"Error: {str(e)}", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
         return fig
