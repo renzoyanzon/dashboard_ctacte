@@ -8,6 +8,7 @@
     --color-rojo: #E24B4A;       /* Deuda */
     --color-ambar: #EF9F27;      /* Advertencia */
     --color-azul: #378ADD;       /* Liquidado */
+    --color-violeta: #8B5CF6;    /* Efectivo */
     --color-gris: #B4B2A9;       /* Neutro */
     --color-sidebar: #1e2130;    /* Fondo sidebar */
     --color-sidebar-hover: #2a2f42; /* Hover sidebar */
@@ -323,7 +324,7 @@ h2 {
    ============================================ */
 .content-area {
     position: fixed;
-    left: 420px; /* 200px sidebar + 220px panel entidades */
+    left: 200px; /* Solo sidebar */
     right: 0;
     top: 0;
     bottom: 0;
@@ -341,10 +342,7 @@ h2 {
     padding-right: 0;
 }
 
-/* Ajuste cuando el panel de entidades no está visible */
-body:not(:has(.entity-list-panel)) .content-area {
-    left: 200px; /* Solo sidebar */
-}
+/* Nota: se removió el panel de entidades del layout */
 
 .page-title {
     font-size: var(--font-size-title);

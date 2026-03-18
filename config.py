@@ -53,6 +53,23 @@ MESES = {
     7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
 }
 
+# Paleta de colores del dashboard (alineada a assets/style.css)
+COLOR_AZUL = "#378ADD"
+COLOR_VERDE = "#1D9E75"
+COLOR_AMBAR = "#EF9F27"
+COLOR_ROJO = "#E24B4A"
+COLOR_GRIS = "#B4B2A9"
+# Requerido para forma de pago IE (Efectivo)
+COLOR_VIOLETA = "#8B5CF6"
+
+# Colores por forma de pago (cobranzas)
+COLORES_FORMAS_PAGO = {
+    "IT": COLOR_AZUL,     # Transferencia
+    "IA": COLOR_VERDE,    # FDC
+    "IC": COLOR_AMBAR,    # Cheque
+    "IE": COLOR_VIOLETA,  # Efectivo
+}
+
 # Nombres de entidades - mapeo por idtrabajo (mayoría de casos)
 # Solo 4 entidades necesitan combinación idtrabajo-envio (ver NOMBRES_ENTIDADES_ENVIO)
 NOMBRES_ENTIDADES = {
@@ -153,10 +170,12 @@ VENCIMIENTOS = {
     "Las heras-sagam": {"desfasaje": 1, "dia_corte": 15},
     "Lavalle": {"desfasaje": 2, "dia_corte": 30},
     "Lujan": {"desfasaje": 1, "dia_corte": 20},
-    "Maipu": {"desfasaje": 1, "dia_corte": 25},
+    "Maipu SOEMM": {"desfasaje": 1, "dia_corte": 25},
+    "Maipu lotes": {"desfasaje": 1, "dia_corte": 25},
     "Mastercard": {"desfasaje": 1, "dia_corte": 30},
     "Naranja": {"desfasaje": 1, "dia_corte": 20},
-    "Rivadavia": {"desfasaje": 2, "dia_corte": 25},
+    "Rivadavia FATAG": {"desfasaje": 2, "dia_corte": 25},
+    "Rivadavia- sindicato": {"desfasaje": 2, "dia_corte": 25},
     "San Carlos": {"desfasaje": 0, "dia_corte": 30},
     "San Martin": {"desfasaje": 1, "dia_corte": 31},
     "Tupungato": {"desfasaje": 1, "dia_corte": 30},

@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "02_modelo_datos.md",
+                "file": "estado actual.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "02_modelo_datos"
+              "title": "estado actual"
             }
           }
         ]
@@ -185,10 +185,10 @@
   },
   "active": "e63ef486daa8694b",
   "lastOpenFiles": [
+    "02_modelo_datos.md",
     "04_guia_implementacion.md",
     "estado actual.md",
     "01_contexto_proyecto.md",
-    "02_modelo_datos.md",
     "Bienvenido.md",
     "03_especificacion_dashboard.md",
     "Sin confirmar 77021.crdownload",

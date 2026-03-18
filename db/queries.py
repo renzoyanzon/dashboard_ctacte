@@ -493,3 +493,183 @@ def get_movimientos_control(anio: int):
     finally:
         if conn:
             conn.close()
+
+
+def get_cobranza_por_periodo(anio=None):
+    """
+    SUM(haber) agrupado por anio, cuota, tipo (formas de pago).
+
+    Returns:
+        DataFrame con columnas: anio, cuota, tipo, total_haber
+    """
+    sql = """
+        SELECT
+            c.anio,
+            c.cuota,
+            c.tipo,
+            COALESCE(SUM(c.haber), 0) AS total_haber
+        FROM ctactetrabajo c
+        WHERE c.tipo IN ('IT','IA','IC','IE')
+          AND (%s IS NULL OR c.anio = %s)
+        GROUP BY c.anio, c.cuota, c.tipo
+        ORDER BY c.anio ASC, c.cuota ASC
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        params = [anio, anio]
+        df = pd.read_sql(sql, conn, params=params)
+        return df if df is not None else pd.DataFrame(columns=["anio", "cuota", "tipo", "total_haber"])
+    except Exception as e:
+        print(f"Error en get_cobranza_por_periodo(): {e}")
+        return pd.DataFrame(columns=["anio", "cuota", "tipo", "total_haber"])
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_cobranza_por_fecha(anio=None):
+    """
+    SUM(haber) agrupado por YEAR(fecha), MONTH(fecha), tipo (formas de pago).
+
+    Returns:
+        DataFrame con columnas: anio_fecha, mes_fecha, tipo, total_haber
+    """
+    sql = """
+        SELECT
+            YEAR(c.fecha) AS anio_fecha,
+            MONTH(c.fecha) AS mes_fecha,
+            c.tipo,
+            COALESCE(SUM(c.haber), 0) AS total_haber
+        FROM ctactetrabajo c
+        WHERE c.tipo IN ('IT','IA','IC','IE')
+          AND c.fecha IS NOT NULL
+          AND (%s IS NULL OR YEAR(c.fecha) = %s)
+        GROUP BY YEAR(c.fecha), MONTH(c.fecha), c.tipo
+        ORDER BY YEAR(c.fecha) ASC, MONTH(c.fecha) ASC
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        params = [anio, anio]
+        df = pd.read_sql(sql, conn, params=params)
+        return df if df is not None else pd.DataFrame(columns=["anio_fecha", "mes_fecha", "tipo", "total_haber"])
+    except Exception as e:
+        print(f"Error en get_cobranza_por_fecha(): {e}")
+        return pd.DataFrame(columns=["anio_fecha", "mes_fecha", "tipo", "total_haber"])
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_comisiones_por_periodo(anio=None):
+    """
+    SUM(debe) de comisiones (clase GC/CO) agrupado por anio, cuota.
+
+    Returns:
+        DataFrame con columnas: anio, cuota, total_comisiones
+    """
+    sql = """
+        SELECT
+            c.anio,
+            c.cuota,
+            COALESCE(SUM(c.debe), 0) AS total_comisiones
+        FROM ctactetrabajo c
+        WHERE c.clase IN ('GC','CO')
+          AND (%s IS NULL OR c.anio = %s)
+        GROUP BY c.anio, c.cuota
+        ORDER BY c.anio ASC, c.cuota ASC
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        params = [anio, anio]
+        df = pd.read_sql(sql, conn, params=params)
+        return df if df is not None else pd.DataFrame(columns=["anio", "cuota", "total_comisiones"])
+    except Exception as e:
+        print(f"Error en get_comisiones_por_periodo(): {e}")
+        return pd.DataFrame(columns=["anio", "cuota", "total_comisiones"])
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_cobranza_entidad_por_periodo(idtrabajo, idenvio, anio=None):
+    """
+    Igual que get_cobranza_por_periodo, filtrando por entidad y envío.
+
+    Returns:
+        DataFrame con columnas: anio, cuota, tipo, total_haber
+    """
+    sql = """
+        SELECT
+            c.anio,
+            c.cuota,
+            c.tipo,
+            COALESCE(SUM(c.haber), 0) AS total_haber
+        FROM ctactetrabajo c
+        WHERE c.idtrabajo = %s
+          AND c.envio = %s
+          AND c.tipo IN ('IT','IA','IC','IE')
+          AND (%s IS NULL OR c.anio = %s)
+        GROUP BY c.anio, c.cuota, c.tipo
+        ORDER BY c.anio ASC, c.cuota ASC
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        params = [int(idtrabajo), int(idenvio), anio, anio]
+        df = pd.read_sql(sql, conn, params=params)
+        return df if df is not None else pd.DataFrame(columns=["anio", "cuota", "tipo", "total_haber"])
+    except Exception as e:
+        print(f"Error en get_cobranza_entidad_por_periodo(): {e}")
+        return pd.DataFrame(columns=["anio", "cuota", "tipo", "total_haber"])
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_saldo_acumulado_entidad(idtrabajo, idenvio):
+    """
+    Saldo acumulado real por período para una entidad/envío.
+
+    - saldo_periodo = SUM(debe - haber) por anio+cuota
+    - saldo_acumulado = cumsum(saldo_periodo) ordenado por anio+cuota
+    - NO usar el campo `saldo` de la tabla
+    """
+    sql = """
+        SELECT
+            c.anio,
+            c.cuota,
+            COALESCE(SUM(c.debe - c.haber), 0) AS saldo_periodo
+        FROM ctactetrabajo c
+        WHERE c.idtrabajo = %s
+          AND c.envio = %s
+          AND NOT (UPPER(c.tipo) = 'CP' AND UPPER(c.clase) = 'CP')
+        GROUP BY c.anio, c.cuota
+        ORDER BY c.anio ASC, c.cuota ASC
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        df = pd.read_sql(sql, conn, params=[int(idtrabajo), int(idenvio)])
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["anio", "cuota", "saldo_periodo", "saldo_acumulado"])
+
+        df["anio"] = pd.to_numeric(df["anio"], errors="coerce").fillna(0).astype(int)
+        df["cuota"] = pd.to_numeric(df["cuota"], errors="coerce").fillna(0).astype(int)
+        df["saldo_periodo"] = pd.to_numeric(df["saldo_periodo"], errors="coerce").fillna(0.0)
+        df = df.sort_values(["anio", "cuota"]).reset_index(drop=True)
+        df["saldo_acumulado"] = df["saldo_periodo"].cumsum()
+        return df
+    except Exception as e:
+        print(f"Error en get_saldo_acumulado_entidad(): {e}")
+        return pd.DataFrame(columns=["anio", "cuota", "saldo_periodo", "saldo_acumulado"])
+    finally:
+        if conn:
+            conn.close()

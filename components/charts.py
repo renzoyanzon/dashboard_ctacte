@@ -4,7 +4,15 @@ Componentes de gráficos Plotly para el dashboard.
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-from config import MESES, TIPOS_LIQUIDACION_REAL, TIPOS_COBRANZA_REAL, CLASES_COMISION
+from config import (
+    MESES,
+    TIPOS_LIQUIDACION_REAL,
+    TIPOS_COBRANZA_REAL,
+    CLASES_COMISION,
+    COLOR_ROJO,
+    COLOR_VERDE,
+    COLOR_AZUL,
+)
 
 
 def formatear_moneda(valor):
@@ -240,25 +248,57 @@ def build_evolucion_saldo(df):
             axis=1
         )
         
-        # Determinar colores según saldo
-        colores_linea = ['#E24B4A' if s > 0 else '#1D9E75' for s in df_sorted['saldo_acumulado']]
-        colores_area = ['rgba(226, 75, 74, 0.3)' if s > 0 else 'rgba(29, 158, 117, 0.3)' 
-                       for s in df_sorted['saldo_acumulado']]
-        
-        # Crear el gráfico
+        y = pd.to_numeric(df_sorted["saldo_acumulado"], errors="coerce").fillna(0.0)
+
+        # Área por signo:
+        # - rojo cuando saldo > 0 (entidad debe a la mutual)
+        # - verde cuando saldo <= 0 (mutual debe a la entidad)
+        y_pos = y.where(y > 0, 0.0)
+        y_neg = y.where(y <= 0, 0.0)
+
         fig = go.Figure()
-        
-        # Área rellena
-        fig.add_trace(go.Scatter(
-            x=df_sorted['periodo'],
-            y=df_sorted['saldo_acumulado'],
-            fill='tozeroy',
-            mode='lines',
-            name='Saldo Acumulado',
-            line=dict(color='#378ADD', width=2),
-            fillcolor='rgba(55, 138, 221, 0.2)',
-            hovertemplate='<b>%{x}</b><br>Saldo: $%{y:,.2f}<extra></extra>'
-        ))
+
+        fig.add_trace(
+            go.Scatter(
+                x=df_sorted["periodo"],
+                y=y_pos,
+                fill="tozeroy",
+                mode="lines",
+                name="Saldo > 0",
+                line=dict(color="rgba(0,0,0,0)"),
+                fillcolor=COLOR_ROJO,
+                hovertemplate="<b>%{x}</b><br>Saldo: $%{customdata:,.2f}<extra></extra>",
+                customdata=y,
+                showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df_sorted["periodo"],
+                y=y_neg,
+                fill="tozeroy",
+                mode="lines",
+                name="Saldo ≤ 0",
+                line=dict(color="rgba(0,0,0,0)"),
+                fillcolor=COLOR_VERDE,
+                hovertemplate="<b>%{x}</b><br>Saldo: $%{customdata:,.2f}<extra></extra>",
+                customdata=y,
+                showlegend=False,
+            )
+        )
+
+        # Línea del saldo acumulado
+        fig.add_trace(
+            go.Scatter(
+                x=df_sorted["periodo"],
+                y=y,
+                mode="lines",
+                name="Saldo acumulado",
+                line=dict(color=COLOR_AZUL, width=2),
+                hovertemplate="<b>%{x}</b><br>Saldo: $%{y:,.2f}<extra></extra>",
+                showlegend=False,
+            )
+        )
         
         # Línea de referencia en 0
         fig.add_hline(

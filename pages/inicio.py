@@ -1,23 +1,23 @@
 """
 Página de Inicio - Resumen general del dashboard.
-Muestra KPIs, ranking de entidades y gráficos globales.
+Muestra SOLO datos agregados generales.
 """
 import dash_bootstrap_components as dbc
-from dash import html, dcc, callback, Input, Output, ALL, MATCH, ctx
+from dash import html, dcc, ctx, Input, Output, State
 import pandas as pd
-from components.kpis import kpi_card, kpi_saldo, formatear_importe
-from components.charts import (
-    build_ranking_saldo,
-    build_cobrado_vs_liquidado_global,
-    build_evolucion_saldo,
-    formatear_moneda
-)
+import plotly.graph_objects as go
+
+from components.kpis import kpi_card, formatear_importe
+from components.charts import build_cobrado_vs_liquidado_global
 from db.queries import (
-    get_saldo_por_entidad,
-    get_liquidado_cobrado_por_periodo,
-    get_saldo_acumulado_por_periodo,
     get_totales_liquidado_cobrado,
+    get_saldo_por_entidad,
+    get_cobranza_por_periodo,
+    get_cobranza_por_fecha,
+    get_comisiones_por_periodo,
+    get_liquidado_cobrado_por_periodo,
 )
+from config import MESES, COLORES_FORMAS_PAGO, COLOR_ROJO, COLOR_GRIS
 
 
 def layout():
@@ -35,76 +35,247 @@ def layout():
                 html.P("Resumen general de todas las entidades", className="page-subtitle")
             ])
         ]),
+
+        # Filtros (aplican a los KPIs superiores)
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader("Filtros (KPIs)"),
+                            dbc.CardBody(
+                                dbc.Row(
+                                    [
+                                        dbc.Col(
+                                            [
+                                                html.Label("Año", className="form-label mb-2"),
+                                                dcc.Dropdown(
+                                                    id="inicio-filtro-anio",
+                                                    options=[],
+                                                    value=None,
+                                                    clearable=False,
+                                                    placeholder="Año...",
+                                                ),
+                                            ],
+                                            md=3,
+                                        ),
+                                        dbc.Col(
+                                            [
+                                                html.Label("Período (Cuota)", className="form-label mb-2"),
+                                                dcc.Dropdown(
+                                                    id="inicio-filtro-cuota",
+                                                    options=[
+                                                        {"label": "Enero", "value": 1},
+                                                        {"label": "Febrero", "value": 2},
+                                                        {"label": "Marzo", "value": 3},
+                                                        {"label": "Abril", "value": 4},
+                                                        {"label": "Mayo", "value": 5},
+                                                        {"label": "Junio", "value": 6},
+                                                        {"label": "Julio", "value": 7},
+                                                        {"label": "Agosto", "value": 8},
+                                                        {"label": "Septiembre", "value": 9},
+                                                        {"label": "Octubre", "value": 10},
+                                                        {"label": "Noviembre", "value": 11},
+                                                        {"label": "Diciembre", "value": 12},
+                                                    ],
+                                                    placeholder="Mes(es)...",
+                                                    multi=True,
+                                                ),
+                                            ],
+                                            md=6,
+                                        ),
+                                        dbc.Col(
+                                            dbc.Button(
+                                                "Actualizar",
+                                                id="inicio-btn-actualizar",
+                                                color="primary",
+                                                className="w-100",
+                                            ),
+                                            md=3,
+                                            className="d-flex align-items-end",
+                                        ),
+                                    ],
+                                    className="g-2",
+                                )
+                            ),
+                        ]
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-3",
+        ),
+
+        # Store de filtros aplicados (solo cambia al apretar "Actualizar")
+        dcc.Store(id="inicio-filtros-aplicados"),
         
-        # Panel de KPIs
+        # SECCIÓN 1: KPIs generales (solo agregados)
         dbc.Row([
             dbc.Col([
-                html.Div(id="kpi-total-debe", children=kpi_card("Total Liquidación", "$0.00", "primary"))
+                html.Div(id="kpi-total-liquidado", children=kpi_card("Total liquidado", "$ 0", "primary"))
             ], md=3),
             dbc.Col([
-                html.Div(id="kpi-total-haber", children=kpi_card("Total Cobrado", "$0.00", "success"))
+                html.Div(id="kpi-total-cobrado", children=kpi_card("Total cobrado", "$ 0", "success"))
             ], md=3),
             dbc.Col([
-                html.Div(id="kpi-saldo-neto", children=kpi_card("% Dif", "0,0%", "secondary"))
+                html.Div(id="kpi-dif-global", children=kpi_card("Dif. liquidado vs cobrado", "$ 0", "secondary"))
             ], md=3),
             dbc.Col([
-                html.Div(id="kpi-entidades-deuda", children=kpi_card("Entidades con Deuda", "0", "danger"))
+                html.Div(id="kpi-entidades-activas", children=kpi_card("Entidades activas", "0", "secondary"))
             ], md=3),
         ], className="mb-4"),
-        
-        dbc.Row([
-            dbc.Col([
-                html.Div(id="kpi-periodos-sin-cobranza", children=kpi_card("Períodos sin Cobranza", "0", "warning"))
-            ], md=3),
-        ], className="mb-4"),
-        
-        # Gráfico: Evolución mensual - total cobrado vs liquidado
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader("Evolución Mensual - Cobrado vs Liquidado"),
-                    dbc.CardBody([
-                        dcc.Graph(id="grafico-cobrado-vs-liquidado", figure={})
-                    ])
-                ])
-            ], md=12)
-        ], className="mb-4"),
-        
-        # Gráfico: Ranking de entidades por saldo
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader("Ranking de Entidades por Saldo"),
-                    dbc.CardBody([
-                        dcc.Graph(id="grafico-ranking-saldo", figure={})
-                    ])
-                ])
-            ], md=12)
-        ], className="mb-4"),
-        
-        # Gráfico: Evolución temporal del saldo total
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader("Evolución Temporal del Saldo Total"),
-                    dbc.CardBody([
-                        dcc.Graph(id="grafico-evolucion-saldo", figure={})
-                    ])
-                ])
-            ], md=12)
-        ], className="mb-4"),
-        
-        # Tabla: Resumen por entidad
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader("Resumen por Entidad"),
-                    dbc.CardBody([
-                        html.Div(id="tabla-resumen-entidades", children="Tabla de resumen por entidad")
-                    ])
-                ])
-            ], md=12)
-        ], className="mb-4"),
+
+        # SECCIÓN 2: Evolución de cobranza (selector Por período / Por fecha)
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader(
+                                dbc.Row(
+                                    [
+                                        dbc.Col(html.Div("Evolución de cobranza", className="mb-0"), md=6),
+                                        dbc.Col(
+                                            dbc.RadioItems(
+                                                id="inicio-cobranza-modo",
+                                                options=[
+                                                    {"label": "Por período", "value": "periodo"},
+                                                    {"label": "Por fecha", "value": "fecha"},
+                                                ],
+                                                value="periodo",
+                                                inline=True,
+                                                inputClassName="btn-check",
+                                                labelClassName="btn btn-outline-primary",
+                                                labelCheckedClassName="active",
+                                            ),
+                                            md=6,
+                                            className="text-end",
+                                        ),
+                                    ],
+                                    align="center",
+                                )
+                            ),
+                            dbc.CardBody(
+                                [
+                                    dbc.Row(
+                                        [
+                                            dbc.Col(
+                                                dcc.Dropdown(
+                                                    id="inicio-cobranza-anio",
+                                                    options=[],
+                                                    value=None,
+                                                    clearable=False,
+                                                    placeholder="Año...",
+                                                ),
+                                                md=3,
+                                            ),
+                                        ],
+                                        className="mb-2",
+                                    ),
+                                    dcc.Graph(id="inicio-fig-cobranza", figure={}),
+                                ]
+                            ),
+                        ]
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-2",
+        ),
+
+        # SECCIÓN 2b: Cobrado vs Liquidado por período (global)
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader("Cobrado vs Liquidado por período (global)"),
+                            dbc.CardBody([dcc.Graph(id="inicio-fig-cobrado-vs-liquidado", figure={})]),
+                        ]
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
+
+        # SECCIÓN 3: KPIs de variación porcentual (12 períodos con paginación)
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        dbc.Row(
+                            [
+                                dbc.Col(html.Div("Variación de cobranza", className="text-muted"), md=6),
+                                dbc.Col(
+                                    dbc.RadioItems(
+                                        id="inicio-kpis-compare",
+                                        options=[
+                                            {"label": "vs mes anterior", "value": "prev"},
+                                            {"label": "vs mismo mes año anterior", "value": "yoy"},
+                                        ],
+                                        value="prev",
+                                        inline=True,
+                                        inputClassName="btn-check",
+                                        labelClassName="btn btn-outline-secondary",
+                                        labelCheckedClassName="active",
+                                    ),
+                                    md=6,
+                                    className="text-end",
+                                ),
+                            ],
+                            align="center",
+                            className="mb-2",
+                        ),
+                        dcc.Store(id="inicio-kpis-page", data=0),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    dbc.ButtonGroup(
+                                        [
+                                            dbc.Button(
+                                                "◀",
+                                                id="inicio-kpis-prev",
+                                                outline=True,
+                                                color="secondary",
+                                                size="sm",
+                                            ),
+                                            dbc.Button(
+                                                "▶",
+                                                id="inicio-kpis-next",
+                                                outline=True,
+                                                color="secondary",
+                                                size="sm",
+                                            ),
+                                        ]
+                                    ),
+                                    md=12,
+                                    className="text-end mb-2",
+                                ),
+                            ]
+                        ),
+                        html.Div(id="inicio-kpis-variacion"),
+                    ]
+                )
+            ],
+            className="mb-4",
+        ),
+
+        # SECCIÓN 4: Comisiones totales por período (siempre por anio+cuota)
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader("Comisiones totales por período"),
+                            dbc.CardBody([dcc.Graph(id="inicio-fig-comisiones", figure={})]),
+                        ]
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
         
     ], fluid=True)
 
@@ -113,89 +284,183 @@ def register_callbacks(app):
     """
     Registra todos los callbacks de la página de inicio.
     """
-    
-    # Callback para manejar clicks en las entidades (patrón MATCH)
-    @app.callback(
-        [
-            Output('store-entity-selected', 'data'),
-            Output({"type": "entity-item", "index": ALL}, "className")
-        ],
-        [
-            Input({"type": "entity-item", "index": ALL}, "n_clicks")
-        ],
-        prevent_initial_call=False
-    )
-    def update_selected_entity(n_clicks_list):
+
+    def _fmt_pesos(valor: float) -> str:
+        try:
+            v = float(valor)
+        except Exception:
+            return "$ 0"
+        return f"$ {v:,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def _kpi_variacion_card(periodo_label: str, total: float, variacion):
         """
-        Maneja el click en cualquier item de entidad y actualiza el Store.
-        Retorna la clase CSS actualizada para cada item.
+        variacion: None (sin dato), o float porcentaje
         """
-        if not ctx.triggered or not n_clicks_list:
-            # Estado inicial: "Todas" seleccionada
-            from db.queries import get_entidades
-            df_entidades = get_entidades()
-            total_items = 1 + len(df_entidades)
-            classes = ["entity-list-item active"] + ["entity-list-item"] * (total_items - 1)
-            return "all", classes
-        
-        # Obtener el id del item clickeado
-        triggered_prop = ctx.triggered[0]["prop_id"]
-        # El formato es: '{"type":"entity-item","index":"all"}.n_clicks'
-        # Necesitamos extraer el índice
-        import json
-        import re
-        # Buscar el JSON en el string
-        match = re.search(r'\{[^}]+\}', triggered_prop)
-        if match:
-            entity_dict = json.loads(match.group())
-            entity_index = entity_dict["index"]
+        if variacion is None:
+            delta_txt = "—"
+            color = "secondary"
         else:
-            entity_index = "all"
-        
-        # Obtener todas las entidades para construir las clases
-        from db.queries import get_entidades
-        df_entidades = get_entidades()
-        
-        # Construir lista de clases
-        classes = []
-        # Primero "Todas"
-        if entity_index == "all":
-            classes.append("entity-list-item active")
-        else:
-            classes.append("entity-list-item")
-        
-        # Luego todas las entidades
-        for _, row in df_entidades.iterrows():
-            entity_id = f"{row['idtrabajo']}_{row['envio']}"
-            if entity_index == entity_id:
-                classes.append("entity-list-item active")
+            try:
+                v = float(variacion)
+            except Exception:
+                v = None
+            if v is None:
+                delta_txt = "—"
+                color = "secondary"
             else:
-                classes.append("entity-list-item")
-        
-        return entity_index, classes
-    
+                if v > 0:
+                    delta_txt = f"▲ {v:.1f}%".replace(".", ",")
+                    color = "success"
+                elif v < 0:
+                    delta_txt = f"▼ {abs(v):.1f}%".replace(".", ",")
+                    color = "danger"
+                else:
+                    delta_txt = "— 0,0%"
+                    color = "secondary"
+
+        return dbc.Card(
+            dbc.CardBody(
+                [
+                    html.Div(periodo_label, className="text-muted", style={"fontSize": "12px"}),
+                    html.Div(_fmt_pesos(total), className="kpi-value", style={"fontSize": "20px"}),
+                    html.Div(delta_txt, className=f"text-{color}", style={"fontWeight": 600}),
+                ]
+            ),
+            className="kpi-card",
+        )
+
+    def _empty_fig(msg: str):
+        fig = go.Figure()
+        fig.add_annotation(text=msg, xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=360)
+        return fig
+
+    @app.callback(
+        Output("inicio-kpis-page", "data"),
+        [Input("inicio-kpis-prev", "n_clicks"), Input("inicio-kpis-next", "n_clicks")],
+        [State("inicio-kpis-page", "data")],
+        prevent_initial_call=True,
+    )
+    def inicio_kpis_paginar(n_prev, n_next, page):
+        try:
+            page = int(page or 0)
+            trig = ctx.triggered_id
+            if trig == "inicio-kpis-prev":
+                return page + 1
+            if trig == "inicio-kpis-next":
+                return max(0, page - 1)
+            return page
+        except Exception:
+            return 0
+
+    @app.callback(
+        [Output("inicio-filtro-anio", "options"), Output("inicio-filtro-anio", "value")],
+        [Input("inicio-btn-actualizar", "n_clicks")],
+        [State("inicio-filtro-anio", "value")],
+        prevent_initial_call=False,
+    )
+    def inicio_filtros_anio(_n, current_value):
+        try:
+            # Años disponibles desde datos por período (ctactetrabajo.anio)
+            df = get_cobranza_por_periodo(anio=None)
+            years = (
+                pd.to_numeric(df.get("anio"), errors="coerce").dropna().astype(int).unique().tolist()
+                if df is not None and not df.empty
+                else []
+            )
+            years = sorted(set(years))
+            opts = [{"label": str(y), "value": int(y)} for y in years]
+            if current_value is not None and int(current_value) in years:
+                val = int(current_value)
+            else:
+                val = int(years[-1]) if years else None
+            return opts, val
+        except Exception:
+            return [], None
+
+    @app.callback(
+        Output("inicio-filtros-aplicados", "data"),
+        [Input("inicio-btn-actualizar", "n_clicks")],
+        [State("inicio-filtro-anio", "value"), State("inicio-filtro-cuota", "value")],
+        prevent_initial_call=False,
+    )
+    def aplicar_filtros_kpi(_n, anio_val, cuota_vals):
+        try:
+            return {"anio": anio_val, "cuotas": cuota_vals}
+        except Exception:
+            return {"anio": None, "cuotas": None}
+
     @app.callback(
         [
-            Output('kpi-total-debe', 'children'),
-            Output('kpi-total-haber', 'children'),
-            Output('kpi-saldo-neto', 'children'),
-            Output('kpi-entidades-deuda', 'children'),
-            Output('grafico-ranking-saldo', 'figure'),
-            Output('grafico-cobrado-vs-liquidado', 'figure'),
-            Output('grafico-evolucion-saldo', 'figure'),
+            Output("inicio-cobranza-anio", "options"),
+            Output("inicio-cobranza-anio", "value"),
         ],
         [
-            Input('filtro-anio', 'value'),
-            Input('store-entity-selected', 'data'),
-            Input('filtro-cuota', 'value'),
-            Input('btn-actualizar', 'n_clicks')
+            Input("inicio-cobranza-modo", "value"),
+        ],
+        [State("inicio-cobranza-anio", "value")],
+    )
+    def inicio_anios_disponibles(modo, current_value):
+        try:
+            if modo == "fecha":
+                df = get_cobranza_por_fecha(anio=None)
+                years = (
+                    pd.to_numeric(df.get("anio_fecha"), errors="coerce")
+                    .dropna()
+                    .astype(int)
+                    .unique()
+                    .tolist()
+                    if df is not None and not df.empty
+                    else []
+                )
+            else:
+                df = get_cobranza_por_periodo(anio=None)
+                years = (
+                    pd.to_numeric(df.get("anio"), errors="coerce")
+                    .dropna()
+                    .astype(int)
+                    .unique()
+                    .tolist()
+                    if df is not None and not df.empty
+                    else []
+                )
+
+            years = sorted(set(years))
+            opts = [{"label": str(y), "value": int(y)} for y in years]
+
+            if current_value is not None and int(current_value) in years:
+                val = int(current_value)
+            else:
+                val = int(years[-1]) if years else None
+
+            return opts, val
+        except Exception:
+            return [], None
+
+    @app.callback(
+        [
+            Output("kpi-total-liquidado", "children"),
+            Output("kpi-total-cobrado", "children"),
+            Output("kpi-dif-global", "children"),
+            Output("kpi-entidades-activas", "children"),
+            Output("inicio-fig-cobranza", "figure"),
+            Output("inicio-kpis-variacion", "children"),
+            Output("inicio-fig-comisiones", "figure"),
+            Output("inicio-fig-cobrado-vs-liquidado", "figure"),
+        ],
+        [
+            Input("inicio-filtros-aplicados", "data"),
+            Input("inicio-cobranza-modo", "value"),
+            Input("inicio-kpis-compare", "value"),
+            Input("inicio-cobranza-anio", "value"),
+            Input("inicio-kpis-page", "data"),
         ]
     )
-    def actualizar_dashboard(anio, entity_selected, cuotas_seleccionadas, n_clicks):
-        """
-        Callback principal que actualiza todos los KPIs y gráficos.
-        """
+    def actualizar_inicio(filtros_aplicados, modo_cobranza, modo_compare, anio_cobranza, kpis_page):
         try:
+            anio = (filtros_aplicados or {}).get("anio")
+            cuotas_seleccionadas = (filtros_aplicados or {}).get("cuotas")
+
             # Convertir cuota a entero si hay selección (multi-select puede venir como lista)
             cuota = None
             if cuotas_seleccionadas:
@@ -206,37 +471,13 @@ def register_callbacks(app):
                     # Si hay múltiples cuotas, no filtrar por cuota (mostrar todas)
                 else:
                     cuota = int(cuotas_seleccionadas)
-            
-            # Obtener datos de saldo por entidad (para ranking y entidades con deuda)
-            df_saldos = get_saldo_por_entidad(anio=anio, cuota=cuota)
-            
-            # Inicializar entidades_filtradas antes del if
-            entidades_filtradas = []
-            
-            # Filtrar por entidad seleccionada (desde Store)
-            if entity_selected and entity_selected != "all":
-                try:
-                    idtrabajo, idenvio = entity_selected.split('_')
-                    entidades_filtradas = [(int(idtrabajo), int(idenvio))]
-                    
-                    # Filtrar DataFrame
-                    mask = df_saldos.apply(
-                        lambda row: (row['idtrabajo'], row['envio']) in entidades_filtradas,
-                        axis=1
-                    )
-                    df_saldos = df_saldos[mask].copy()
-                except:
-                    entidades_filtradas = []
-            
-            # KPI: Total liquidación / Total cobrado / % dif
-            # Clases pedidas: M, CS, SS y SV (en datos suele ser SF; incluimos ambos por seguridad)
+
+            # Dataset auxiliar para KPIs (incluye año anterior para YOY y para mes anterior en Enero)
+            dff_prev = pd.DataFrame()
+
+            # KPI: Total liquidación / Total cobrado / diferencia (agregado global)
             clases_liq_kpi = ["M", "CS", "SS", "SV", "SF"]
-            df_tot = get_totales_liquidado_cobrado(
-                anio=anio,
-                cuota=cuota,
-                entidades=entidades_filtradas if len(entidades_filtradas) > 0 else None,
-                clases_liquidacion=clases_liq_kpi,
-            )
+            df_tot = get_totales_liquidado_cobrado(anio=anio, cuota=cuota, entidades=None, clases_liquidacion=clases_liq_kpi)
             # Obtener valores de liquidado y cobrado de forma segura
             if df_tot is not None and not df_tot.empty:
                 liquidado = float(df_tot.iloc[0]["liquidado"])
@@ -245,79 +486,216 @@ def register_callbacks(app):
                 liquidado = 0.0
                 cobrado = 0.0
 
-            dif_pct = 0.0
-            if liquidado > 0:
-                dif_pct = ((liquidado - cobrado) / liquidado) * 100.0
+            dif_abs = liquidado - cobrado
 
-            # Mantener saldo_neto para KPI colorizado (se usa en kpi_saldo para el semáforo)
-            saldo_neto = liquidado - cobrado
-            entidades_deuda = len(df_saldos[df_saldos['saldo_neto'] > 0]) if not df_saldos.empty else 0
-            
-            # Crear componentes KPI (usar formatear_importe para evitar cortes)
-            kpi_debe = kpi_card("Total Liquidación", formatear_importe(liquidado), "primary")
-            kpi_haber = kpi_card("Total Cobrado", formatear_importe(cobrado), "success")
-            # % dif con coma decimal
-            dif_str = f"{dif_pct:.1f}".replace(".", ",") + "%"
-            # Color: rojo si > tolerancia (simple), verde si <= 0, ámbar si >0 y <=10
-            dif_color = "success" if dif_pct <= 0 else ("warning" if dif_pct <= 10 else "danger")
-            kpi_saldo_comp = kpi_card("% Dif", dif_str, dif_color)
-            kpi_deuda = kpi_card("Entidades con Deuda", str(entidades_deuda), "danger")
-            
-            # Construir gráficos
-            fig_ranking = build_ranking_saldo(df_saldos)
-            
-            # Gráfico de liquidado vs cobrado (con filtro de entidad)
-            df_liquidado_cobrado = get_liquidado_cobrado_por_periodo(
-                anio=anio, 
-                entidades=entidades_filtradas if entidades_filtradas else None
-            )
-            fig_liquidado_cobrado = build_cobrado_vs_liquidado_global(df_liquidado_cobrado)
-            
-            # Gráfico de evolución de saldo (con filtro de entidad)
-            df_saldo_acumulado = get_saldo_acumulado_por_periodo(
-                anio=anio,
-                entidades=entidades_filtradas if entidades_filtradas else None
-            )
-            fig_evolucion = build_evolucion_saldo(df_saldo_acumulado)
-            
+            # Entidades activas (conteo agregado)
+            df_act = get_saldo_por_entidad(anio=anio, cuota=cuota)
+            entidades_activas = int(len(df_act)) if df_act is not None and not df_act.empty else 0
+
+            kpi_liq = kpi_card("Total liquidado", formatear_importe(liquidado), "primary")
+            kpi_cob = kpi_card("Total cobrado", formatear_importe(cobrado), "success")
+            dif_color = "danger" if dif_abs > 0 else ("success" if dif_abs < 0 else "secondary")
+            kpi_dif = kpi_card("Dif. liquidado vs cobrado", formatear_importe(dif_abs), dif_color)
+            kpi_ent = kpi_card("Entidades activas", str(entidades_activas), "secondary")
+
+            # Cobranza apilada por forma de pago
+            if modo_cobranza == "fecha":
+                df_cob = get_cobranza_por_fecha(anio=anio_cobranza)
+                if df_cob is None or df_cob.empty:
+                    fig_cob = _empty_fig("Sin datos")
+                    kpis_variacion = html.Div()
+                else:
+                    dff = df_cob.rename(columns={"anio_fecha": "anio", "mes_fecha": "mes"}).copy()
+                    dff["anio"] = pd.to_numeric(dff["anio"], errors="coerce").fillna(0).astype(int)
+                    dff["mes"] = pd.to_numeric(dff["mes"], errors="coerce").fillna(0).astype(int)
+                    dff["total_haber"] = pd.to_numeric(dff["total_haber"], errors="coerce").fillna(0.0)
+                    dff = dff[dff["mes"].between(1, 12)].copy()
+                    dff["periodo_key"] = dff["anio"] * 100 + dff["mes"]
+                    dff = dff.sort_values(["periodo_key"])
+                    dff["periodo"] = dff.apply(lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+                    # Para YOY y mes anterior (p.ej. Enero vs Diciembre anterior) necesitamos año previo
+                    df_prev = get_cobranza_por_fecha(anio=anio_cobranza - 1) if anio_cobranza is not None else pd.DataFrame()
+                    if df_prev is not None and not df_prev.empty:
+                        dff_prev = df_prev.rename(columns={"anio_fecha": "anio", "mes_fecha": "mes"}).copy()
+                        dff_prev["anio"] = pd.to_numeric(dff_prev["anio"], errors="coerce").fillna(0).astype(int)
+                        dff_prev["mes"] = pd.to_numeric(dff_prev["mes"], errors="coerce").fillna(0).astype(int)
+                        dff_prev["total_haber"] = pd.to_numeric(dff_prev["total_haber"], errors="coerce").fillna(0.0)
+                        dff_prev = dff_prev[dff_prev["mes"].between(1, 12)].copy()
+                        dff_prev["periodo_key"] = dff_prev["anio"] * 100 + dff_prev["mes"]
+                        dff_prev = dff_prev.sort_values(["periodo_key"])
+                        dff_prev["periodo"] = dff_prev.apply(
+                            lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1
+                        )
+            else:
+                df_cob = get_cobranza_por_periodo(anio=anio_cobranza)
+                if df_cob is None or df_cob.empty:
+                    fig_cob = _empty_fig("Sin datos")
+                    kpis_variacion = html.Div()
+                else:
+                    dff = df_cob.rename(columns={"cuota": "mes"}).copy()
+                    dff["anio"] = pd.to_numeric(dff["anio"], errors="coerce").fillna(0).astype(int)
+                    dff["mes"] = pd.to_numeric(dff["mes"], errors="coerce").fillna(0).astype(int)
+                    dff["total_haber"] = pd.to_numeric(dff["total_haber"], errors="coerce").fillna(0.0)
+                    dff = dff[dff["mes"].between(1, 12)].copy()
+                    dff["periodo_key"] = dff["anio"] * 100 + dff["mes"]
+                    dff = dff.sort_values(["periodo_key"])
+                    dff["periodo"] = dff.apply(lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
+                    # Para YOY y mes anterior (p.ej. Enero vs Diciembre anterior) necesitamos año previo
+                    df_prev = get_cobranza_por_periodo(anio=anio_cobranza - 1) if anio_cobranza is not None else pd.DataFrame()
+                    if df_prev is not None and not df_prev.empty:
+                        dff_prev = df_prev.rename(columns={"cuota": "mes"}).copy()
+                        dff_prev["anio"] = pd.to_numeric(dff_prev["anio"], errors="coerce").fillna(0).astype(int)
+                        dff_prev["mes"] = pd.to_numeric(dff_prev["mes"], errors="coerce").fillna(0).astype(int)
+                        dff_prev["total_haber"] = pd.to_numeric(dff_prev["total_haber"], errors="coerce").fillna(0.0)
+                        dff_prev = dff_prev[dff_prev["mes"].between(1, 12)].copy()
+                        dff_prev["periodo_key"] = dff_prev["anio"] * 100 + dff_prev["mes"]
+                        dff_prev = dff_prev.sort_values(["periodo_key"])
+                        dff_prev["periodo"] = dff_prev.apply(
+                            lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1
+                        )
+
+            if df_cob is None or df_cob.empty:
+                fig_cob = _empty_fig("Sin datos")
+                kpis_variacion = html.Div()
+            else:
+                # Pivot por tipo (traza por forma de pago)
+                pivot = (
+                    dff.pivot_table(index=["periodo_key", "periodo"], columns="tipo", values="total_haber", aggfunc="sum")
+                    .fillna(0.0)
+                    .reset_index()
+                    .sort_values("periodo_key")
+                )
+                fig_cob = go.Figure()
+                for tipo in ["IT", "IA", "IC", "IE"]:
+                    fig_cob.add_trace(
+                        go.Bar(
+                            name=tipo,
+                            x=pivot["periodo"],
+                            y=pivot.get(tipo, pd.Series([0.0] * len(pivot))),
+                            marker_color=COLORES_FORMAS_PAGO.get(tipo, COLOR_GRIS),
+                            hovertemplate="<b>%{x}</b><br>Tipo: " + tipo + "<br>$%{y:,.2f}<extra></extra>",
+                        )
+                    )
+                fig_cob.update_layout(
+                    barmode="stack",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    height=420,
+                    margin=dict(l=30, r=10, t=10, b=80),
+                    xaxis=dict(tickangle=-45),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+                    yaxis_title="Monto cobrado ($)",
+                )
+
+                # KPIs de variación:
+                # - Los períodos mostrados salen SOLO del dataset actual del gráfico (dff).
+                # - Para comparar YOY usamos el dataset previo (dff_prev) pero NO lo mostramos.
+                totales_actual = (
+                    dff.groupby(["periodo_key", "periodo"], as_index=False)["total_haber"]
+                    .sum()
+                    .sort_values("periodo_key")
+                )
+                totales_prev = (
+                    dff_prev.groupby(["periodo_key", "periodo"], as_index=False)["total_haber"]
+                    .sum()
+                    .sort_values("periodo_key")
+                    if dff_prev is not None and not dff_prev.empty
+                    else pd.DataFrame(columns=["periodo_key", "periodo", "total_haber"])
+                )
+
+                keys_sorted_actual = totales_actual["periodo_key"].astype(int).tolist()
+                mapa_prev = {int(r["periodo_key"]): float(r["total_haber"]) for _, r in totales_prev.iterrows()}
+
+                page = int(kpis_page or 0)
+                end = len(totales_actual) - (page * 6)
+                start = max(0, end - 12)
+                ventana = (
+                    totales_actual.iloc[start:end].reset_index(drop=True)
+                    if end > 0
+                    else pd.DataFrame(columns=totales_actual.columns)
+                )
+
+                cards = []
+                for _, r in ventana.iterrows():
+                    key = int(r["periodo_key"])
+                    actual = float(r["total_haber"])
+
+                    if modo_compare == "yoy":
+                        an = key // 100
+                        mes = key % 100
+                        comp_key = (an - 1) * 100 + mes
+                        anterior = mapa_prev.get(comp_key)
+                    else:
+                        # vs mes anterior: comparación contra el período inmediatamente anterior visible
+                        idx = keys_sorted_actual.index(key) if key in keys_sorted_actual else -1
+                        comp_key = keys_sorted_actual[idx - 1] if idx > 0 else None
+                        anterior = float(totales_actual.iloc[idx - 1]["total_haber"]) if comp_key is not None else None
+
+                    if anterior is None or anterior == 0:
+                        var = None
+                    else:
+                        var = ((actual - anterior) / anterior) * 100.0
+
+                    cards.append(_kpi_variacion_card(str(r["periodo"]), actual, var))
+
+                kpis_variacion = dbc.Row([dbc.Col(c, md=2) for c in cards], className="g-2")
+
+            # Comisiones totales por período (siempre anio+cuota)
+            df_com = get_comisiones_por_periodo(anio=anio_cobranza)
+            if df_com is None or df_com.empty:
+                fig_com = _empty_fig("Sin datos")
+            else:
+                com = df_com.copy()
+                com["anio"] = pd.to_numeric(com["anio"], errors="coerce").fillna(0).astype(int)
+                com["cuota"] = pd.to_numeric(com["cuota"], errors="coerce").fillna(0).astype(int)
+                com["total_comisiones"] = pd.to_numeric(com["total_comisiones"], errors="coerce").fillna(0.0)
+                com = com[com["cuota"].between(1, 12)].sort_values(["anio", "cuota"])
+                com["periodo"] = com.apply(lambda r: f"{MESES.get(int(r['cuota']), r['cuota'])} {int(r['anio'])}", axis=1)
+
+                fig_com = go.Figure()
+                fig_com.add_trace(
+                    go.Scatter(
+                        x=com["periodo"],
+                        y=com["total_comisiones"],
+                        mode="lines+markers",
+                        line=dict(color=COLOR_ROJO, width=2),
+                        marker=dict(color=COLOR_ROJO),
+                        hovertemplate="<b>%{x}</b><br>Comisiones: $%{y:,.2f}<extra></extra>",
+                        name="Comisiones",
+                    )
+                )
+                fig_com.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    height=360,
+                    margin=dict(l=30, r=10, t=10, b=80),
+                    xaxis=dict(tickangle=-45),
+                    yaxis_title="Monto ($)",
+                    showlegend=False,
+                )
+
+            df_lc = get_liquidado_cobrado_por_periodo(anio=anio_cobranza, entidades=None)
+            fig_lc = build_cobrado_vs_liquidado_global(df_lc) if df_lc is not None and not df_lc.empty else _empty_fig("Sin datos")
+
             return (
-                kpi_debe,
-                kpi_haber,
-                kpi_saldo_comp,
-                kpi_deuda,
-                fig_ranking,
-                fig_liquidado_cobrado,
-                fig_evolucion
+                kpi_liq,
+                kpi_cob,
+                kpi_dif,
+                kpi_ent,
+                fig_cob,
+                kpis_variacion,
+                fig_com,
+                fig_lc,
             )
             
         except Exception as e:
-            print(f"Error en actualizar_dashboard(): {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Retornar valores por defecto en caso de error
-            error_fig = {
-                'data': [],
-                'layout': {
-                    'annotations': [{
-                        'text': f'Error: {str(e)}',
-                        'xref': 'paper',
-                        'yref': 'paper',
-                        'x': 0.5,
-                        'y': 0.5,
-                        'showarrow': False
-                    }],
-                    'paper_bgcolor': 'transparent',
-                    'plot_bgcolor': 'transparent'
-                }
-            }
-            
             return (
-                kpi_card("Total Debe", "Error", "secondary"),
-                kpi_card("Total Haber", "Error", "secondary"),
-                kpi_card("Saldo Neto", "Error", "secondary"),
-                kpi_card("Entidades con Deuda", "Error", "secondary"),
-                error_fig,
-                error_fig,
-                error_fig
+                kpi_card("Total liquidado", "Error", "secondary"),
+                kpi_card("Total cobrado", "Error", "secondary"),
+                kpi_card("Dif. liquidado vs cobrado", "Error", "secondary"),
+                kpi_card("Entidades activas", "Error", "secondary"),
+                _empty_fig(f"Error: {str(e)}"),
+                html.Div(),
+                _empty_fig("Error"),
+                _empty_fig("Error"),
             )

@@ -8,8 +8,6 @@ import dash_bootstrap_components as dbc
 from pages.inicio import layout as layout_inicio, register_callbacks as register_inicio_callbacks
 from pages.entidad import layout as layout_entidad, register_callbacks as register_entidad_callbacks
 from pages.control import layout as layout_control, register_callbacks as register_control_callbacks
-from components.filters import build_filtros
-from components.entity_list import build_entity_list
 
 # Inicializar la aplicación Dash con tema Bootstrap
 app = dash.Dash(
@@ -43,22 +41,13 @@ app.layout = dbc.Container([
                 ], vertical=True, pills=True, className="sidebar-nav"),
                 
                 html.Hr(className="sidebar-divider"),
-                
-                # Filtros globales (sin dropdown de entidades)
-                html.Div(build_filtros(), className="sidebar-filters"),
-                
             ], className="sidebar-container")
-        ], width=2, style={'padding': 0}),
-        
-        # Panel de entidades (solo visible en página de inicio)
-        dbc.Col([
-            html.Div(id='entity-list-container', style={'display': 'none'})
         ], width=2, style={'padding': 0}),
         
         # Contenido principal a la derecha
         dbc.Col([
             html.Div(id='page-content', className="content-area")
-        ], width=8, style={'padding': 0})
+        ], width=10, style={'padding': 0})
     ])
 ], fluid=True, style={'padding': 0})
 
@@ -72,8 +61,6 @@ register_control_callbacks(app)
 @app.callback(
     [
         dash.dependencies.Output('page-content', 'children'),
-        dash.dependencies.Output('entity-list-container', 'children'),
-        dash.dependencies.Output('entity-list-container', 'style')
     ],
     [dash.dependencies.Input('url', 'pathname')]
 )
@@ -85,20 +72,14 @@ def display_page(pathname):
     if pathname == '/entidad':
         return (
             layout_entidad(),
-            None,
-            {'display': 'none'}
         )
     elif pathname == '/control':
         return (
             layout_control(),
-            None,
-            {'display': 'none'}
         )
     else:  # pathname == '/' o cualquier otra ruta
         return (
             layout_inicio(),
-            build_entity_list(),
-            {'display': 'block'}
         )
 
 

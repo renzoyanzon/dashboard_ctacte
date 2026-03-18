@@ -1,15 +1,5 @@
-16/3/26
-me falta hacer:
-git add .
-git commit -m "feat: fase 3 — gráficos página de inicio y callbacks";
-git checkout main;
-git merge fase/3-graficos-inicio;
-git push origin main;
-
-Probar un poco mas los datos que salen en los graficos
-
-git checkout -b fase/4-pagina-entidad
-
-Ya actualice los md con todas las ultimas consultas a cursor.
-
-Me falta pasarle el prompts que me dio cursor para comenzar con la fase 4
+17/3/26
+Ya tengo listo para pasar a producción el dashboard.
+Existen cambios menores como aplicar ciertos filtros a graficos pero nada relevante, por el momento lo voy a dejar asi y cuando empiece a usarlo realmente ahi voy a ver que cambios van a ser mas utiles
+Ya esta todo commiteado y pushueado en github.
+Me falta tomar la decision si usar pc en red para el despliegue o usar un servidor web.
