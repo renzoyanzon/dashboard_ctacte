@@ -217,6 +217,52 @@ def get_totales_liquidado_cobrado(anio=None, cuota=None, entidades=None, clases_
             conn.close()
 
 
+def get_gastos_procesamiento_global(anio=None, cuota=None):
+    """
+    Gastos de procesamiento (reales): movimientos tipo IM, clase GP, importe en haber.
+
+    Args:
+        anio: filtro opcional por año del período
+        cuota: filtro opcional por mes (1-12)
+
+    Returns:
+        DataFrame con una fila: gastos_procesamiento (float)
+    """
+    conditions = ["c.tipo = 'IM'", "c.clase = 'GP'"]
+    params = []
+
+    if anio is not None:
+        conditions.append("c.anio = %s")
+        params.append(int(anio))
+    if cuota is not None:
+        conditions.append("c.cuota = %s")
+        params.append(int(cuota))
+
+    where_clause = "WHERE " + " AND ".join(conditions)
+
+    sql = f"""
+        SELECT COALESCE(SUM(c.haber), 0) AS gastos_procesamiento
+        FROM ctactetrabajo c
+        {where_clause}
+    """
+
+    conn = None
+    try:
+        conn = get_connection()
+        if params:
+            df = pd.read_sql(sql, conn, params=params)
+        else:
+            df = pd.read_sql(sql, conn)
+        val = float(df.iloc[0]["gastos_procesamiento"]) if df is not None and not df.empty else 0.0
+        return pd.DataFrame([{"gastos_procesamiento": val}])
+    except Exception as e:
+        print(f"Error en get_gastos_procesamiento_global(): {e}")
+        return pd.DataFrame([{"gastos_procesamiento": 0.0}])
+    finally:
+        if conn:
+            conn.close()
+
+
 def get_movimientos_entidad(idtrabajo, idenvio, anio=None, cuota=None):
     """
     Obtiene el detalle completo de movimientos para una entidad y envío específicos.
@@ -489,6 +535,46 @@ def get_movimientos_control(anio: int):
         return df
     except Exception as e:
         print(f"Error en get_movimientos_control(): {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_movimientos_cobranza_global(anio=None, cuota=None):
+    """
+    Filas agregadas por movimiento para calcular cobranza neta (ingresos + egresos devolución).
+
+    Returns:
+        DataFrame: idtrabajo, envio, anio, cuota, tipo, clase, haber, fecha
+    """
+    sql = """
+        SELECT
+            c.idtrabajo,
+            c.envio,
+            c.anio,
+            c.cuota,
+            c.tipo,
+            c.clase,
+            COALESCE(c.debe, 0) AS debe,
+            COALESCE(c.haber, 0) AS haber,
+            c.fecha
+        FROM ctactetrabajo c
+        WHERE c.tipo IN ('IT','IA','IC','IE','ET','EE','EC')
+          AND (%s IS NULL OR c.anio = %s)
+          AND (%s IS NULL OR c.cuota = %s)
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        params = [anio, anio, cuota, cuota]
+        df = pd.read_sql(sql, conn, params=params)
+        if df is not None and not df.empty:
+            # Drivers pueden devolver Tipo/tipo distinto; el código espera nombres en minúsculas
+            df.columns = [str(c).strip().lower() for c in df.columns]
+        return df if df is not None else pd.DataFrame()
+    except Exception as e:
+        print(f"Error en get_movimientos_cobranza_global(): {e}")
         return pd.DataFrame()
     finally:
         if conn:

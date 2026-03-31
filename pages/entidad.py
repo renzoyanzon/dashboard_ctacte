@@ -9,18 +9,20 @@ import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output, State, ctx, dash_table
 
 from config import (
-    TIPOS_LIQUIDACION_REAL,
-    TIPOS_COBRANZA_REAL,
-    TIPOS_LIQUIDACION,
-    TIPOS_INGRESOS,
-    TIPOS_EGRESOS,
-    TIPOS_AJUSTES,
-    get_nombre_entidad,
+    COLOR_AMBAR,
     MESES,
+    TIPOS_AJUSTES,
+    TIPOS_COBRANZA_REAL,
+    TIPOS_EGRESOS,
+    TIPOS_INGRESOS,
+    TIPOS_LIQUIDACION,
+    TIPOS_LIQUIDACION_REAL,
+    get_nombre_entidad,
+    get_regla_devoluciones_cobranza,
 )
 
 from db.queries import get_entidades, get_movimientos_entidad
-from data.transformations import build_pivot_entidad
+from data.transformations import build_pivot_entidad, calcular_cobranza_neta
 from components.charts import (
     build_liquidaciones_vs_cobros,
     build_evolucion_saldo,
@@ -468,14 +470,18 @@ def register_callbacks(app):
 
     # 3c) Liquidado vs Cobrado: cambia SOLO con el dropdown de año
     @app.callback(
-        Output("entidad-fig-liquidado-cobrado", "figure"),
+        [
+            Output("entidad-fig-liquidado-cobrado", "figure"),
+            Output("entidad-kpi-devoluciones", "children"),
+        ],
         [Input("entidad-movimientos-store", "data"), Input("entidad-lc-anio", "value")],
+        [State("entidad-store-selected", "data")],
     )
-    def lc_fig(mov_records, anio_sel):
+    def lc_fig(mov_records, anio_sel, ent):
         try:
             df = pd.DataFrame(mov_records or [])
-            if df.empty:
-                return _empty_fig("Sin datos")
+            if df.empty or not ent:
+                return _empty_fig("Sin datos"), html.Div()
 
             dff = df.copy()
             for col in ("debe", "haber", "anio", "cuota"):
@@ -486,7 +492,10 @@ def register_callbacks(app):
                 dff = dff[dff["anio"] == int(anio_sel)].copy()
 
             if dff.empty:
-                return _empty_fig("Sin datos")
+                return _empty_fig("Sin datos"), html.Div()
+
+            idt, ide = int(ent["idtrabajo"]), int(ent["idenvio"])
+            dev_config = get_regla_devoluciones_cobranza(idt, ide)
 
             lc = (
                 dff.groupby(["anio", "cuota"], as_index=False)
@@ -496,9 +505,51 @@ def register_callbacks(app):
                 )
                 .sort_values(["anio", "cuota"])
             )
-            return build_liquidaciones_vs_cobros(lc)
+
+            if dev_config is None:
+                return build_liquidaciones_vs_cobros(lc, con_devoluciones=False), html.Div()
+
+            if "tipo" in dff.columns:
+                dff["tipo"] = dff["tipo"].astype(str).str.strip().str.upper()
+            if "clase" in dff.columns:
+                dff["clase"] = dff["clase"].astype(str).str.strip().str.upper()
+            else:
+                dff["clase"] = ""
+
+            nmx = calcular_cobranza_neta(dff, idt, ide)
+            if nmx.empty:
+                return build_liquidaciones_vs_cobros(lc, con_devoluciones=False), html.Div()
+
+            nmx = nmx[nmx["anio"] == int(anio_sel)] if anio_sel else nmx
+            nmx = nmx.rename(
+                columns={
+                    "cobranza_neta": "cobrado_neta",
+                }
+            )
+            lc = lc.merge(
+                nmx[["anio", "cuota", "cobrado_neta", "devoluciones", "cobranza_bruta"]],
+                on=["anio", "cuota"],
+                how="left",
+            )
+            lc["cobrado_neta"] = lc["cobrado_neta"].fillna(lc["cobrado"])
+            lc["devoluciones"] = lc["devoluciones"].fillna(0)
+            lc["cobranza_bruta"] = lc["cobranza_bruta"].fillna(lc["cobrado"])
+
+            total_dev = float(lc["devoluciones"].sum())
+            kpi_dev = html.Div(
+                [
+                    html.Span("Devoluciones acumuladas período", className="text-muted me-2"),
+                    html.Span(
+                        f"$ {total_dev:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                        style={"color": COLOR_AMBAR, "fontWeight": 700, "fontSize": "1.1rem"},
+                    ),
+                ],
+                className="mt-2",
+            )
+
+            return build_liquidaciones_vs_cobros(lc, con_devoluciones=True), kpi_dev
         except Exception:
-            return _empty_fig("Error")
+            return _empty_fig("Error"), html.Div()
 
     # 4) Cuadro de control: años disponibles + pivote
     @app.callback(
@@ -725,6 +776,7 @@ def _tab_resumen():
                                         dcc.Loading(
                                             dcc.Graph(id="entidad-fig-liquidado-cobrado", figure=_empty_fig("Cargando..."))
                                         ),
+                                        html.Div(id="entidad-kpi-devoluciones"),
                                     ]
                                 ),
                             ]

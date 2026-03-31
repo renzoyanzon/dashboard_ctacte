@@ -5,13 +5,14 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 from config import (
-    MESES,
-    TIPOS_LIQUIDACION_REAL,
-    TIPOS_COBRANZA_REAL,
     CLASES_COMISION,
+    COLOR_AZUL,
     COLOR_ROJO,
     COLOR_VERDE,
-    COLOR_AZUL,
+    MESES,
+    TIPOS_COBRANZA_REAL,
+    TIPOS_LIQUIDACION_REAL,
+    COLOR_AMBAR,
 )
 
 
@@ -214,6 +215,109 @@ def build_cobrado_vs_liquidado_global(df):
         return fig
 
 
+def build_cobranza_neta_por_entidad(df: pd.DataFrame, top_n: int = 10) -> go.Figure:
+    """
+    Barras horizontales: cobranza neta por entidad y % sobre el total.
+    Muestra las top_n entidades y agrupa el resto en «Resto».
+    """
+    try:
+        if df is None or df.empty:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Sin datos",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                height=380,
+            )
+            return fig
+
+        d = df.copy()
+        d = d.sort_values("cobranza_neta", ascending=False)
+        top = d.head(top_n).copy()
+        rest_sum = float(d.iloc[top_n:]["cobranza_neta"].sum()) if len(d) > top_n else 0.0
+        if rest_sum > 1e-6:
+            top = pd.concat(
+                [top, pd.DataFrame([{"nombre": "Resto", "cobranza_neta": rest_sum}])],
+                ignore_index=True,
+            )
+
+        total = float(top["cobranza_neta"].sum())
+        if total <= 0:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Sin datos",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                height=380,
+            )
+            return fig
+
+        top["pct"] = top["cobranza_neta"] / total * 100.0
+        plot_df = top.sort_values("cobranza_neta", ascending=True)
+
+        textos = [
+            f"{formatear_moneda(v)} ({f'{p:.1f}'.replace('.', ',')}%)"
+            for v, p in zip(plot_df["cobranza_neta"], plot_df["pct"])
+        ]
+
+        fig = go.Figure(
+            go.Bar(
+                x=plot_df["cobranza_neta"],
+                y=plot_df["nombre"],
+                orientation="h",
+                text=textos,
+                textposition="outside",
+                marker_color=COLOR_AZUL,
+                hovertemplate="<b>%{y}</b><br>Neto: $%{x:,.2f}<br>%{customdata:.1f}% del total<extra></extra>",
+                customdata=plot_df["pct"],
+            )
+        )
+        n_bars = len(plot_df)
+        fig.update_layout(
+            title="Cobranza neta por entidad (% del total)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=max(380, min(560, 44 * n_bars + 120)),
+            margin=dict(l=160, r=120, t=50, b=40),
+            xaxis_title="Cobranza neta ($)",
+            yaxis_title="",
+            showlegend=False,
+        )
+        fig.update_yaxes(automargin=True)
+        return fig
+    except Exception as e:
+        print(f"Error en build_cobranza_neta_por_entidad(): {e}")
+        fig = go.Figure()
+        fig.add_annotation(
+            text=f"Error: {str(e)}",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+        )
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=400,
+        )
+        return fig
+
+
 def build_evolucion_saldo(df):
     """
     Construye gráfico de línea con área rellena del saldo acumulado total.
@@ -339,14 +443,94 @@ def build_evolucion_saldo(df):
         return fig
 
 
-def build_liquidaciones_vs_cobros(df: pd.DataFrame) -> go.Figure:
+def build_liquidaciones_vs_cobros(df: pd.DataFrame, con_devoluciones: bool = False) -> go.Figure:
     """
     Barras agrupadas por período para una entidad (Liquidado vs Cobrado).
 
-    Espera df con columnas: anio, cuota, liquidado, cobrado
+    Sin devoluciones: columnas anio, cuota, liquidado, cobrado.
+    Con devoluciones: anio, cuota, liquidado, cobrado_neta, devoluciones, cobranza_bruta.
     """
-    # Reutiliza el builder global (misma estructura de datos)
-    return build_cobrado_vs_liquidado_global(df)
+    try:
+        if not con_devoluciones:
+            return build_cobrado_vs_liquidado_global(df)
+
+        if df is None or df.empty:
+            return build_cobrado_vs_liquidado_global(pd.DataFrame())
+
+        req = {"anio", "cuota", "liquidado", "cobrado_neta", "devoluciones", "cobranza_bruta"}
+        if not req.issubset(set(df.columns)):
+            return build_cobrado_vs_liquidado_global(df)
+
+        df_sorted = df.sort_values(["anio", "cuota"]).copy()
+        df_sorted["periodo"] = df_sorted.apply(
+            lambda row: f"{MESES.get(int(row['cuota']), str(row['cuota']))} {int(row['anio'])}",
+            axis=1,
+        )
+
+        cd = df_sorted[
+            ["cobranza_bruta", "devoluciones", "cobrado_neta"]
+        ].to_numpy()
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                name="Liquidado",
+                x=df_sorted["periodo"],
+                y=df_sorted["liquidado"],
+                marker_color="#378ADD",
+                offsetgroup=0,
+                hovertemplate="<b>%{x}</b><br>Liquidado: $%{y:,.2f}<extra></extra>",
+            )
+        )
+
+        fig.add_trace(
+            go.Bar(
+                name="Cobrado",
+                x=df_sorted["periodo"],
+                y=df_sorted["cobrado_neta"],
+                marker_color="#1D9E75",
+                offsetgroup=1,
+                customdata=cd,
+                hovertemplate=(
+                    "<b>%{x}</b><br>Cobranza bruta: $%{customdata[0]:,.2f}<br>"
+                    "Devoluciones: $%{customdata[1]:,.2f}<br>Cobranza neta: $%{customdata[2]:,.2f}<extra></extra>"
+                ),
+            )
+        )
+
+        fig.add_trace(
+            go.Bar(
+                name="Devoluciones",
+                x=df_sorted["periodo"],
+                y=df_sorted["devoluciones"],
+                base=df_sorted["cobrado_neta"],
+                marker_color=COLOR_AMBAR,
+                offsetgroup=1,
+                customdata=cd,
+                hovertemplate=(
+                    "<b>%{x}</b><br>Cobranza bruta: $%{customdata[0]:,.2f}<br>"
+                    "Devoluciones: $%{customdata[1]:,.2f}<br>Cobranza neta: $%{customdata[2]:,.2f}<extra></extra>"
+                ),
+            )
+        )
+
+        fig.update_layout(
+            title="Evolución Mensual - Cobrado vs Liquidado",
+            xaxis_title="Período",
+            yaxis_title="Monto ($)",
+            barmode="group",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=400,
+            margin=dict(l=50, r=50, t=50, b=100),
+            xaxis=dict(tickangle=-45),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        return fig
+    except Exception as e:
+        print(f"Error en build_liquidaciones_vs_cobros(): {e}")
+        return build_cobrado_vs_liquidado_global(df if df is not None else pd.DataFrame())
 
 
 def build_torta_subgrupos(df: pd.DataFrame, anio: int | None) -> go.Figure:

@@ -1,6 +1,10 @@
 """
 Página de Inicio - Resumen general del dashboard.
 Muestra SOLO datos agregados generales.
+
+Toda la cobranza agregada en esta página usa cobranza neta (devoluciones descontadas
+según PARAMETROS_ENTIDAD). El detalle de devoluciones por entidad solo aplica en
+«Por entidad» (Lavalle, Luján, Tupungato).
 """
 import dash_bootstrap_components as dbc
 from dash import html, dcc, ctx, Input, Output, State
@@ -8,14 +12,19 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from components.kpis import kpi_card, formatear_importe
-from components.charts import build_cobrado_vs_liquidado_global
+from components.charts import build_cobrado_vs_liquidado_global, build_cobranza_neta_por_entidad
+from data.transformations import (
+    calcular_cobranza_neta_global,
+    cobranza_neta_por_fecha_desde_movimientos,
+    tabla_cobranza_neta_por_entidad,
+)
 from db.queries import (
     get_totales_liquidado_cobrado,
     get_saldo_por_entidad,
-    get_cobranza_por_periodo,
-    get_cobranza_por_fecha,
     get_comisiones_por_periodo,
     get_liquidado_cobrado_por_periodo,
+    get_movimientos_cobranza_global,
+    get_gastos_procesamiento_global,
 )
 from config import MESES, COLORES_FORMAS_PAGO, COLOR_ROJO, COLOR_GRIS
 
@@ -42,7 +51,7 @@ def layout():
                 dbc.Col(
                     dbc.Card(
                         [
-                            dbc.CardHeader("Filtros (KPIs)"),
+                            dbc.CardHeader("Filtros (toda la página)"),
                             dbc.CardBody(
                                 dbc.Row(
                                     [
@@ -118,14 +127,33 @@ def layout():
                 html.Div(id="kpi-total-cobrado", children=kpi_card("Total cobrado", "$ 0", "success"))
             ], md=3),
             dbc.Col([
-                html.Div(id="kpi-dif-global", children=kpi_card("Dif. liquidado vs cobrado", "$ 0", "secondary"))
+                html.Div(
+                    id="kpi-gastos-procesamiento",
+                    children=kpi_card("Gastos de procesamiento", "$ 0", "warning"),
+                )
             ], md=3),
             dbc.Col([
                 html.Div(id="kpi-entidades-activas", children=kpi_card("Entidades activas", "0", "secondary"))
             ], md=3),
         ], className="mb-4"),
 
-        # SECCIÓN 2: Evolución de cobranza (selector Por período / Por fecha)
+        # SECCIÓN 2: Cobrado vs Liquidado por período (global)
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader("Cobrado vs Liquidado por período (global)"),
+                            dbc.CardBody([dcc.Graph(id="inicio-fig-cobrado-vs-liquidado", figure={})]),
+                        ]
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
+
+        # SECCIÓN 3: Evolución de cobranza (año = filtro principal; variación sin filtro de mes)
         dbc.Row(
             [
                 dbc.Col(
@@ -157,20 +185,9 @@ def layout():
                             ),
                             dbc.CardBody(
                                 [
-                                    dbc.Row(
-                                        [
-                                            dbc.Col(
-                                                dcc.Dropdown(
-                                                    id="inicio-cobranza-anio",
-                                                    options=[],
-                                                    value=None,
-                                                    clearable=False,
-                                                    placeholder="Año...",
-                                                ),
-                                                md=3,
-                                            ),
-                                        ],
-                                        className="mb-2",
+                                    html.Small(
+                                        "Usa el año del filtro superior (sin mes): permite ver la evolución y la variación mes a mes.",
+                                        className="text-muted d-block mb-2",
                                     ),
                                     dcc.Graph(id="inicio-fig-cobranza", figure={}),
                                 ]
@@ -183,23 +200,7 @@ def layout():
             className="mb-2",
         ),
 
-        # SECCIÓN 2b: Cobrado vs Liquidado por período (global)
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        [
-                            dbc.CardHeader("Cobrado vs Liquidado por período (global)"),
-                            dbc.CardBody([dcc.Graph(id="inicio-fig-cobrado-vs-liquidado", figure={})]),
-                        ]
-                    ),
-                    md=12,
-                )
-            ],
-            className="mb-4",
-        ),
-
-        # SECCIÓN 3: KPIs de variación porcentual (12 períodos con paginación)
+        # SECCIÓN 4: KPIs de variación porcentual (12 períodos con paginación)
         dbc.Row(
             [
                 dbc.Col(
@@ -261,7 +262,23 @@ def layout():
             className="mb-4",
         ),
 
-        # SECCIÓN 4: Comisiones totales por período (siempre por anio+cuota)
+        # SECCIÓN 5: Cobranza neta por entidad (% del total)
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        [
+                            dbc.CardHeader("Cobranza neta por entidad (% del total)"),
+                            dbc.CardBody([dcc.Graph(id="inicio-fig-cobranza-por-entidad", figure={})]),
+                        ]
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
+
+        # SECCIÓN 6: Comisiones totales por período (siempre por anio+cuota)
         dbc.Row(
             [
                 dbc.Col(
@@ -361,8 +378,7 @@ def register_callbacks(app):
     )
     def inicio_filtros_anio(_n, current_value):
         try:
-            # Años disponibles desde datos por período (ctactetrabajo.anio)
-            df = get_cobranza_por_periodo(anio=None)
+            df = get_movimientos_cobranza_global(anio=None)
             years = (
                 pd.to_numeric(df.get("anio"), errors="coerce").dropna().astype(int).unique().tolist()
                 if df is not None and not df.empty
@@ -392,71 +408,24 @@ def register_callbacks(app):
 
     @app.callback(
         [
-            Output("inicio-cobranza-anio", "options"),
-            Output("inicio-cobranza-anio", "value"),
-        ],
-        [
-            Input("inicio-cobranza-modo", "value"),
-        ],
-        [State("inicio-cobranza-anio", "value")],
-    )
-    def inicio_anios_disponibles(modo, current_value):
-        try:
-            if modo == "fecha":
-                df = get_cobranza_por_fecha(anio=None)
-                years = (
-                    pd.to_numeric(df.get("anio_fecha"), errors="coerce")
-                    .dropna()
-                    .astype(int)
-                    .unique()
-                    .tolist()
-                    if df is not None and not df.empty
-                    else []
-                )
-            else:
-                df = get_cobranza_por_periodo(anio=None)
-                years = (
-                    pd.to_numeric(df.get("anio"), errors="coerce")
-                    .dropna()
-                    .astype(int)
-                    .unique()
-                    .tolist()
-                    if df is not None and not df.empty
-                    else []
-                )
-
-            years = sorted(set(years))
-            opts = [{"label": str(y), "value": int(y)} for y in years]
-
-            if current_value is not None and int(current_value) in years:
-                val = int(current_value)
-            else:
-                val = int(years[-1]) if years else None
-
-            return opts, val
-        except Exception:
-            return [], None
-
-    @app.callback(
-        [
             Output("kpi-total-liquidado", "children"),
             Output("kpi-total-cobrado", "children"),
-            Output("kpi-dif-global", "children"),
+            Output("kpi-gastos-procesamiento", "children"),
             Output("kpi-entidades-activas", "children"),
+            Output("inicio-fig-cobrado-vs-liquidado", "figure"),
             Output("inicio-fig-cobranza", "figure"),
             Output("inicio-kpis-variacion", "children"),
+            Output("inicio-fig-cobranza-por-entidad", "figure"),
             Output("inicio-fig-comisiones", "figure"),
-            Output("inicio-fig-cobrado-vs-liquidado", "figure"),
         ],
         [
             Input("inicio-filtros-aplicados", "data"),
             Input("inicio-cobranza-modo", "value"),
             Input("inicio-kpis-compare", "value"),
-            Input("inicio-cobranza-anio", "value"),
             Input("inicio-kpis-page", "data"),
         ]
     )
-    def actualizar_inicio(filtros_aplicados, modo_cobranza, modo_compare, anio_cobranza, kpis_page):
+    def actualizar_inicio(filtros_aplicados, modo_cobranza, modo_compare, kpis_page):
         try:
             anio = (filtros_aplicados or {}).get("anio")
             cuotas_seleccionadas = (filtros_aplicados or {}).get("cuotas")
@@ -475,18 +444,26 @@ def register_callbacks(app):
             # Dataset auxiliar para KPIs (incluye año anterior para YOY y para mes anterior en Enero)
             dff_prev = pd.DataFrame()
 
-            # KPI: Total liquidación / Total cobrado / diferencia (agregado global)
+            # KPI: Total liquidación / Total cobrado (neto) / diferencia (agregado global)
             clases_liq_kpi = ["M", "CS", "SS", "SV", "SF"]
             df_tot = get_totales_liquidado_cobrado(anio=anio, cuota=cuota, entidades=None, clases_liquidacion=clases_liq_kpi)
-            # Obtener valores de liquidado y cobrado de forma segura
             if df_tot is not None and not df_tot.empty:
                 liquidado = float(df_tot.iloc[0]["liquidado"])
-                cobrado = float(df_tot.iloc[0]["cobrado"])
             else:
                 liquidado = 0.0
+
+            df_kpi_mov = get_movimientos_cobranza_global(anio=anio, cuota=cuota)
+            df_kpi_net = calcular_cobranza_neta_global(df_kpi_mov)
+            if df_kpi_net is not None and not df_kpi_net.empty:
+                cobrado = float(df_kpi_net["cobranza_neta"].sum())
+            else:
                 cobrado = 0.0
 
-            dif_abs = liquidado - cobrado
+            df_gp = get_gastos_procesamiento_global(anio=anio, cuota=cuota)
+            if df_gp is not None and not df_gp.empty:
+                gastos_proc = float(df_gp.iloc[0]["gastos_procesamiento"])
+            else:
+                gastos_proc = 0.0
 
             # Entidades activas (conteo agregado)
             df_act = get_saldo_por_entidad(anio=anio, cuota=cuota)
@@ -494,29 +471,34 @@ def register_callbacks(app):
 
             kpi_liq = kpi_card("Total liquidado", formatear_importe(liquidado), "primary")
             kpi_cob = kpi_card("Total cobrado", formatear_importe(cobrado), "success")
-            dif_color = "danger" if dif_abs > 0 else ("success" if dif_abs < 0 else "secondary")
-            kpi_dif = kpi_card("Dif. liquidado vs cobrado", formatear_importe(dif_abs), dif_color)
+            kpi_gastos = kpi_card("Gastos de procesamiento", formatear_importe(gastos_proc), "warning")
             kpi_ent = kpi_card("Entidades activas", str(entidades_activas), "secondary")
 
-            # Cobranza apilada por forma de pago
+            tabla_ent = tabla_cobranza_neta_por_entidad(df_kpi_mov)
+            fig_ent = build_cobranza_neta_por_entidad(tabla_ent)
+
+            # Evolución + KPIs de variación: año del filtro principal, sin mes/cuota (comparación mes a mes).
+            df_raw_evol = get_movimientos_cobranza_global(anio=anio, cuota=None)
+            df_net_evol = calcular_cobranza_neta_global(df_raw_evol)
+
             if modo_cobranza == "fecha":
-                df_cob = get_cobranza_por_fecha(anio=anio_cobranza)
-                if df_cob is None or df_cob.empty:
-                    fig_cob = _empty_fig("Sin datos")
-                    kpis_variacion = html.Div()
-                else:
-                    dff = df_cob.rename(columns={"anio_fecha": "anio", "mes_fecha": "mes"}).copy()
+                dff = cobranza_neta_por_fecha_desde_movimientos(df_raw_evol)
+                if not dff.empty:
+                    dff = dff.rename(columns={"anio_fecha": "anio", "mes_fecha": "mes"}).copy()
                     dff["anio"] = pd.to_numeric(dff["anio"], errors="coerce").fillna(0).astype(int)
                     dff["mes"] = pd.to_numeric(dff["mes"], errors="coerce").fillna(0).astype(int)
                     dff["total_haber"] = pd.to_numeric(dff["total_haber"], errors="coerce").fillna(0.0)
                     dff = dff[dff["mes"].between(1, 12)].copy()
                     dff["periodo_key"] = dff["anio"] * 100 + dff["mes"]
                     dff = dff.sort_values(["periodo_key"])
-                    dff["periodo"] = dff.apply(lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
-                    # Para YOY y mes anterior (p.ej. Enero vs Diciembre anterior) necesitamos año previo
-                    df_prev = get_cobranza_por_fecha(anio=anio_cobranza - 1) if anio_cobranza is not None else pd.DataFrame()
-                    if df_prev is not None and not df_prev.empty:
-                        dff_prev = df_prev.rename(columns={"anio_fecha": "anio", "mes_fecha": "mes"}).copy()
+                    dff["periodo"] = dff.apply(
+                        lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1
+                    )
+                if anio is not None:
+                    df_prev_raw = get_movimientos_cobranza_global(anio=anio - 1, cuota=None)
+                    dff_prev = cobranza_neta_por_fecha_desde_movimientos(df_prev_raw)
+                    if not dff_prev.empty:
+                        dff_prev = dff_prev.rename(columns={"anio_fecha": "anio", "mes_fecha": "mes"}).copy()
                         dff_prev["anio"] = pd.to_numeric(dff_prev["anio"], errors="coerce").fillna(0).astype(int)
                         dff_prev["mes"] = pd.to_numeric(dff_prev["mes"], errors="coerce").fillna(0).astype(int)
                         dff_prev["total_haber"] = pd.to_numeric(dff_prev["total_haber"], errors="coerce").fillna(0.0)
@@ -527,25 +509,27 @@ def register_callbacks(app):
                             lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1
                         )
             else:
-                df_cob = get_cobranza_por_periodo(anio=anio_cobranza)
-                if df_cob is None or df_cob.empty:
-                    fig_cob = _empty_fig("Sin datos")
-                    kpis_variacion = html.Div()
-                else:
-                    dff = df_cob.rename(columns={"cuota": "mes"}).copy()
+                df_net = df_net_evol
+                if not df_net.empty:
+                    dff = df_net.rename(columns={"cobranza_neta": "total_haber"}).copy()
+                    dff["mes"] = pd.to_numeric(dff["cuota"], errors="coerce").fillna(0).astype(int)
                     dff["anio"] = pd.to_numeric(dff["anio"], errors="coerce").fillna(0).astype(int)
-                    dff["mes"] = pd.to_numeric(dff["mes"], errors="coerce").fillna(0).astype(int)
                     dff["total_haber"] = pd.to_numeric(dff["total_haber"], errors="coerce").fillna(0.0)
                     dff = dff[dff["mes"].between(1, 12)].copy()
                     dff["periodo_key"] = dff["anio"] * 100 + dff["mes"]
                     dff = dff.sort_values(["periodo_key"])
-                    dff["periodo"] = dff.apply(lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1)
-                    # Para YOY y mes anterior (p.ej. Enero vs Diciembre anterior) necesitamos año previo
-                    df_prev = get_cobranza_por_periodo(anio=anio_cobranza - 1) if anio_cobranza is not None else pd.DataFrame()
-                    if df_prev is not None and not df_prev.empty:
-                        dff_prev = df_prev.rename(columns={"cuota": "mes"}).copy()
+                    dff["periodo"] = dff.apply(
+                        lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1
+                    )
+                else:
+                    dff = pd.DataFrame()
+                if anio is not None:
+                    df_prev_raw = get_movimientos_cobranza_global(anio=anio - 1, cuota=None)
+                    dff_prev = calcular_cobranza_neta_global(df_prev_raw)
+                    if not dff_prev.empty:
+                        dff_prev = dff_prev.rename(columns={"cobranza_neta": "total_haber"}).copy()
+                        dff_prev["mes"] = pd.to_numeric(dff_prev["cuota"], errors="coerce").fillna(0).astype(int)
                         dff_prev["anio"] = pd.to_numeric(dff_prev["anio"], errors="coerce").fillna(0).astype(int)
-                        dff_prev["mes"] = pd.to_numeric(dff_prev["mes"], errors="coerce").fillna(0).astype(int)
                         dff_prev["total_haber"] = pd.to_numeric(dff_prev["total_haber"], errors="coerce").fillna(0.0)
                         dff_prev = dff_prev[dff_prev["mes"].between(1, 12)].copy()
                         dff_prev["periodo_key"] = dff_prev["anio"] * 100 + dff_prev["mes"]
@@ -554,7 +538,7 @@ def register_callbacks(app):
                             lambda r: f"{MESES.get(int(r['mes']), r['mes'])} {int(r['anio'])}", axis=1
                         )
 
-            if df_cob is None or df_cob.empty:
+            if dff is None or dff.empty:
                 fig_cob = _empty_fig("Sin datos")
                 kpis_variacion = html.Div()
             else:
@@ -640,8 +624,8 @@ def register_callbacks(app):
 
                 kpis_variacion = dbc.Row([dbc.Col(c, md=2) for c in cards], className="g-2")
 
-            # Comisiones totales por período (siempre anio+cuota)
-            df_com = get_comisiones_por_periodo(anio=anio_cobranza)
+            # Comisiones: mismo año/período que filtros principales
+            df_com = get_comisiones_por_periodo(anio=anio)
             if df_com is None or df_com.empty:
                 fig_com = _empty_fig("Sin datos")
             else:
@@ -649,52 +633,83 @@ def register_callbacks(app):
                 com["anio"] = pd.to_numeric(com["anio"], errors="coerce").fillna(0).astype(int)
                 com["cuota"] = pd.to_numeric(com["cuota"], errors="coerce").fillna(0).astype(int)
                 com["total_comisiones"] = pd.to_numeric(com["total_comisiones"], errors="coerce").fillna(0.0)
+                if cuota is not None:
+                    com = com[com["cuota"] == int(cuota)]
                 com = com[com["cuota"].between(1, 12)].sort_values(["anio", "cuota"])
-                com["periodo"] = com.apply(lambda r: f"{MESES.get(int(r['cuota']), r['cuota'])} {int(r['anio'])}", axis=1)
-
-                fig_com = go.Figure()
-                fig_com.add_trace(
-                    go.Scatter(
-                        x=com["periodo"],
-                        y=com["total_comisiones"],
-                        mode="lines+markers",
-                        line=dict(color=COLOR_ROJO, width=2),
-                        marker=dict(color=COLOR_ROJO),
-                        hovertemplate="<b>%{x}</b><br>Comisiones: $%{y:,.2f}<extra></extra>",
-                        name="Comisiones",
+                if com.empty:
+                    fig_com = _empty_fig("Sin datos")
+                else:
+                    com["periodo"] = com.apply(
+                        lambda r: f"{MESES.get(int(r['cuota']), r['cuota'])} {int(r['anio'])}", axis=1
                     )
-                )
-                fig_com.update_layout(
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    height=360,
-                    margin=dict(l=30, r=10, t=10, b=80),
-                    xaxis=dict(tickangle=-45),
-                    yaxis_title="Monto ($)",
-                    showlegend=False,
-                )
 
-            df_lc = get_liquidado_cobrado_por_periodo(anio=anio_cobranza, entidades=None)
-            fig_lc = build_cobrado_vs_liquidado_global(df_lc) if df_lc is not None and not df_lc.empty else _empty_fig("Sin datos")
+                    fig_com = go.Figure()
+                    fig_com.add_trace(
+                        go.Scatter(
+                            x=com["periodo"],
+                            y=com["total_comisiones"],
+                            mode="lines+markers",
+                            line=dict(color=COLOR_ROJO, width=2),
+                            marker=dict(color=COLOR_ROJO),
+                            hovertemplate="<b>%{x}</b><br>Comisiones: $%{y:,.2f}<extra></extra>",
+                            name="Comisiones",
+                        )
+                    )
+                    fig_com.update_layout(
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        height=360,
+                        margin=dict(l=30, r=10, t=10, b=80),
+                        xaxis=dict(tickangle=-45),
+                        yaxis_title="Monto ($)",
+                        showlegend=False,
+                    )
+
+            # Cobrado vs Liquidado (global): cobranza neta = mismo alcance que KPIs (año + cuota si aplica)
+            df_li = get_liquidado_cobrado_por_periodo(anio=anio, entidades=None)
+            if df_kpi_net is not None and not df_kpi_net.empty:
+                cob_neta_periodo = df_kpi_net.groupby(["anio", "cuota"], as_index=False)["cobranza_neta"].sum()
+            else:
+                cob_neta_periodo = pd.DataFrame(columns=["anio", "cuota", "cobranza_neta"])
+
+            if df_li is not None and not df_li.empty:
+                df_li = df_li.drop(columns=["cobrado"], errors="ignore")
+                df_lc = df_li.merge(cob_neta_periodo, on=["anio", "cuota"], how="outer")
+                df_lc["liquidado"] = pd.to_numeric(df_lc.get("liquidado"), errors="coerce").fillna(0.0)
+                df_lc["cobrado"] = pd.to_numeric(df_lc.get("cobranza_neta"), errors="coerce").fillna(0.0)
+                df_lc = df_lc.drop(columns=["cobranza_neta"], errors="ignore")
+                df_lc = df_lc.sort_values(["anio", "cuota"])
+            elif not cob_neta_periodo.empty:
+                df_lc = cob_neta_periodo.rename(columns={"cobranza_neta": "cobrado"}).copy()
+                df_lc["liquidado"] = 0.0
+            else:
+                df_lc = pd.DataFrame()
+
+            if cuota is not None and not df_lc.empty:
+                df_lc = df_lc[df_lc["cuota"] == int(cuota)].copy()
+
+            fig_lc = build_cobrado_vs_liquidado_global(df_lc) if not df_lc.empty else _empty_fig("Sin datos")
 
             return (
                 kpi_liq,
                 kpi_cob,
-                kpi_dif,
+                kpi_gastos,
                 kpi_ent,
+                fig_lc,
                 fig_cob,
                 kpis_variacion,
+                fig_ent,
                 fig_com,
-                fig_lc,
             )
-            
+
         except Exception as e:
             return (
                 kpi_card("Total liquidado", "Error", "secondary"),
                 kpi_card("Total cobrado", "Error", "secondary"),
-                kpi_card("Dif. liquidado vs cobrado", "Error", "secondary"),
+                kpi_card("Gastos de procesamiento", "Error", "secondary"),
                 kpi_card("Entidades activas", "Error", "secondary"),
                 _empty_fig(f"Error: {str(e)}"),
+                _empty_fig("Error"),
                 html.Div(),
                 _empty_fig("Error"),
                 _empty_fig("Error"),

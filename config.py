@@ -116,6 +116,33 @@ NOMBRES_ENTIDADES_ENVIO = {
     (16,6):"Rivadavia- sindicato",
 }
 
+# Devoluciones que se restan de la cobranza bruta (IT/IA/IC/IE en haber) solo en estas entidades.
+# El importe a restar va en el campo **debe** (no en haber).
+#
+# Luján y Lavalle: basta con clase DV (cualquier tipo).
+# Tupungato: tipo ET/EE/EC y clase CS (hay IM+CS u otros que no son devolución de cobranza).
+COBRANZA_DEVOLUCIONES = {
+    (13, 11): {"clase": "DV"},
+    (22, 29): {"clase": "DV"},
+    (21, 8): {"tipo": ["ET", "EE", "EC"], "clase": "CS"},
+}
+
+
+def codigos_tipo_devolucion(cfg: dict | None) -> list:
+    """
+    Lista de tipos a filtrar en la columna `tipo`. Lista vacía = no filtrar por tipo (solo clase).
+    """
+    if not cfg:
+        return []
+    raw = cfg.get("tipo")
+    if raw is None:
+        raw = cfg.get("tipos")
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw.strip().upper()]
+    return [str(x).strip().upper() for x in raw]
+
 # Parámetros por entidad/envío
 # Para la mayoría: clave es solo idtrabajo (int)
 # Para 4 casos especiales: clave es tupla (idtrabajo, idenvio)
@@ -146,7 +173,7 @@ PARAMETROS_ENTIDAD = {
     # Entidades que requieren combinación idtrabajo-envio
     (5, 20): {"proc": 2.0, "com": None},
     (5, 21): {"proc": 2.0, "com": None},
-    (7, 15): {"proc": 1.0, "com": 10.0},
+    (7, 15): {"proc": 2.0, "com": 10.0},
     (7, 24): {"proc": 2.0, "com": None},
     (8, 12): {"proc": 3.0, "com": 4.0},
     (8, 23): {"proc": 3.0, "com": None},
@@ -217,6 +244,16 @@ def get_nombre_entidad(idtrabajo, idenvio=None):
             return NOMBRES_ENTIDADES_ENVIO[key]
     
     return NOMBRES_ENTIDADES.get(idtrabajo)
+
+
+def get_regla_devoluciones_cobranza(idtrabajo, idenvio):
+    """
+    Regla para restar devoluciones de la cobranza bruta, o None si no aplica.
+    Clave exacta (idtrabajo, idenvio) según COBRANZA_DEVOLUCIONES.
+    """
+    if idenvio is None:
+        return None
+    return COBRANZA_DEVOLUCIONES.get((int(idtrabajo), int(idenvio)))
 
 
 def get_parametros_entidad(idtrabajo, idenvio=None):
