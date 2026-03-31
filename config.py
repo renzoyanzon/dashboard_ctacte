@@ -47,6 +47,21 @@ TIPOS_COBRANZA_REAL = ["IT", "IA", "IC", "IE"]
 # Clases de comisión
 CLASES_COMISION = ["GC", "CO"]
 
+# Registran gasto de procesamiento como IM+GC (haber), no IM+GP.
+# idtrabajo: Bioplanta, San Carlos, Irrigacion, Escuela Avellaneda.
+PROCESAMIENTO_USA_IM_GC_IDS = frozenset({2, 17, 25, 30})
+
+
+def procesamiento_usa_im_gc(idtrabajo) -> bool:
+    """True si la entidad carga procesamiento solo como IM+GC (haber), no IM+GP."""
+    if idtrabajo is None:
+        return False
+    try:
+        return int(idtrabajo) in PROCESAMIENTO_USA_IM_GC_IDS
+    except (TypeError, ValueError):
+        return False
+
+
 # Mapeo de meses
 MESES = {
     1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun",
@@ -157,11 +172,11 @@ PARAMETROS_ENTIDAD = {
     10: {"proc": 1.0, "com": None},
     11: {"proc": 4.0, "com": None},
     12: {"proc": 3.0, "com": None},
-    13: {"proc": 0.0, "com": 8.0},
+    13: {"proc": 0.0, "com": None},
     17: {"proc": 3.0, "com": None},
     18: {"proc": 2.0, "com": None},
     21: {"proc": 0.0, "com": 7.0},
-    22: {"proc": 0.0, "com": 5.0},
+    22: {"proc": 0.0, "com": None},
     24: {"proc": 0.0, "com": None},
     25: {"proc": 20.0, "com": None},
     30: {"proc": 4.0, "com": None},

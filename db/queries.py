@@ -4,7 +4,12 @@ Todas las funciones retornan DataFrames de pandas.
 """
 import pandas as pd
 from db.connection import get_connection
-from config import get_nombre_entidad, TIPOS_LIQUIDACION_REAL, TIPOS_COBRANZA_REAL
+from config import (
+    get_nombre_entidad,
+    PROCESAMIENTO_USA_IM_GC_IDS,
+    TIPOS_LIQUIDACION_REAL,
+    TIPOS_COBRANZA_REAL,
+)
 
 
 def _build_or_entidades(entidades, params, alias="c"):
@@ -219,7 +224,8 @@ def get_totales_liquidado_cobrado(anio=None, cuota=None, entidades=None, clases_
 
 def get_gastos_procesamiento_global(anio=None, cuota=None):
     """
-    Gastos de procesamiento (reales): movimientos tipo IM, clase GP, importe en haber.
+    Gastos de procesamiento (reales): IM+GP en haber, salvo entidades en
+    ``PROCESAMIENTO_USA_IM_GC_IDS`` que usan IM+GC en haber.
 
     Args:
         anio: filtro opcional por año del período
@@ -228,22 +234,30 @@ def get_gastos_procesamiento_global(anio=None, cuota=None):
     Returns:
         DataFrame con una fila: gastos_procesamiento (float)
     """
-    conditions = ["c.tipo = 'IM'", "c.clase = 'GP'"]
+    ids_s = ",".join(str(int(x)) for x in sorted(PROCESAMIENTO_USA_IM_GC_IDS))
+    extra = []
     params = []
 
     if anio is not None:
-        conditions.append("c.anio = %s")
+        extra.append("c.anio = %s")
         params.append(int(anio))
     if cuota is not None:
-        conditions.append("c.cuota = %s")
+        extra.append("c.cuota = %s")
         params.append(int(cuota))
 
-    where_clause = "WHERE " + " AND ".join(conditions)
+    where_rest = (" AND " + " AND ".join(extra)) if extra else ""
 
     sql = f"""
-        SELECT COALESCE(SUM(c.haber), 0) AS gastos_procesamiento
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN c.idtrabajo IN ({ids_s}) AND c.tipo = 'IM' AND c.clase = 'GC' THEN c.haber
+                WHEN c.idtrabajo NOT IN ({ids_s}) AND c.tipo = 'IM' AND c.clase = 'GP' THEN c.haber
+                ELSE 0
+            END
+        ), 0) AS gastos_procesamiento
         FROM ctactetrabajo c
-        {where_clause}
+        WHERE 1=1
+        {where_rest}
     """
 
     conn = None
@@ -652,18 +666,21 @@ def get_cobranza_por_fecha(anio=None):
 
 def get_comisiones_por_periodo(anio=None):
     """
-    SUM(debe) de comisiones (clase GC/CO) agrupado por anio, cuota.
+    SUM(haber) de comisiones (clase GC/CO). Excluye IM+GC de entidades que usan esa
+    combinación solo para gasto de procesamiento.
 
     Returns:
         DataFrame con columnas: anio, cuota, total_comisiones
     """
-    sql = """
+    ids_s = ",".join(str(int(x)) for x in sorted(PROCESAMIENTO_USA_IM_GC_IDS))
+    sql = f"""
         SELECT
             c.anio,
             c.cuota,
-            COALESCE(SUM(c.debe), 0) AS total_comisiones
+            COALESCE(SUM(c.haber), 0) AS total_comisiones
         FROM ctactetrabajo c
         WHERE c.clase IN ('GC','CO')
+          AND NOT (c.idtrabajo IN ({ids_s}) AND c.tipo = 'IM' AND c.clase = 'GC')
           AND (%s IS NULL OR c.anio = %s)
         GROUP BY c.anio, c.cuota
         ORDER BY c.anio ASC, c.cuota ASC

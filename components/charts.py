@@ -13,6 +13,7 @@ from config import (
     TIPOS_COBRANZA_REAL,
     TIPOS_LIQUIDACION_REAL,
     COLOR_AMBAR,
+    procesamiento_usa_im_gc,
 )
 
 
@@ -638,11 +639,12 @@ def build_torta_formas_pago(df: pd.DataFrame, anio: int | None) -> go.Figure:
         return fig
 
 
-def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
+def build_barras_comisiones(df: pd.DataFrame, anio: int | None, idtrabajo: int | None = None) -> go.Figure:
     """
     Barras de comisiones (clases GC/CO) por período.
 
-    Suma `debe` para filas donde `clase` está en CLASES_COMISION.
+    Suma ``haber``. En entidades que cargan procesamiento como IM+GC, excluye esas filas
+    del total de comisiones.
     """
     try:
         if df is None or df.empty:
@@ -656,6 +658,9 @@ def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
             dff = dff[dff["anio"] == int(anio)]
 
         dff = dff[dff["clase"].isin(CLASES_COMISION)].copy()
+        if idtrabajo is not None and procesamiento_usa_im_gc(int(idtrabajo)):
+            t = dff["tipo"].astype(str).str.strip().str.upper()
+            dff = dff[~((t == "IM") & (dff["clase"] == "GC"))]
         if dff.empty:
             fig = go.Figure()
             fig.add_annotation(text="No hay comisiones", xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
@@ -663,7 +668,7 @@ def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
             return fig
 
         grp = (
-            dff.groupby(["anio", "cuota"], as_index=False)["debe"]
+            dff.groupby(["anio", "cuota"], as_index=False)["haber"]
             .sum()
             .sort_values(["anio", "cuota"])
         )
@@ -673,7 +678,7 @@ def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
         fig.add_trace(
             go.Bar(
                 x=grp["periodo"],
-                y=grp["debe"],
+                y=grp["haber"],
                 name="Comisiones",
                 marker_color="#EF9F27",
                 hovertemplate="<b>%{x}</b><br>Comisiones: $%{y:,.2f}<extra></extra>",
@@ -699,7 +704,21 @@ def build_barras_comisiones(df: pd.DataFrame, anio: int | None) -> go.Figure:
         return fig
 
 
-def build_heatmap_cobertura(df: pd.DataFrame, anio: int | None = None) -> go.Figure:
+# Texto de hover para celdas sin fila en el dataset (relleno según z)
+HOVER_HEATMAP_PROC_COM = {
+    0: "OK: liquidación, cobranza y registro esperado",
+    1: "Liquidación sin cobranza aún",
+    2: "Liquidación y cobranza: falta el registro esperado",
+    3: "Sin liquidación o sin datos en el período",
+}
+
+
+def build_heatmap_cobertura(
+    df: pd.DataFrame,
+    anio: int | None = None,
+    title: str | None = None,
+    hover_z_default: dict[int, str] | None = None,
+) -> go.Figure:
     """
     Heatmap de cobertura para Control de carga.
 
@@ -708,7 +727,11 @@ def build_heatmap_cobertura(df: pd.DataFrame, anio: int | None = None) -> go.Fig
       - cuota (1..12)
       - estado_num (0 ok, 1 pendiente, 2 vencido, 3 sin_config/sin_datos)
       - opcional: fecha_venc (date/str), estado (str), entidad_nombre (str),
-                 tiene_liquidacion (bool), tiene_cobranza (bool)
+                 tiene_liquidacion (bool), tiene_cobranza (bool), estado_label (str)
+
+    ``title``: título del gráfico (por defecto cobertura de cobranzas).
+    ``hover_z_default``: si hay columna ``estado_label`` o se pasa este dict, el hover
+    muestra texto; las celdas sin fila usan el texto según ``z`` desde este mapa.
     """
     try:
         if df is None or df.empty:
@@ -738,7 +761,10 @@ def build_heatmap_cobertura(df: pd.DataFrame, anio: int | None = None) -> go.Fig
         y_idx = {name: i for i, name in enumerate(y_envios)}
         x_idx = {m: j for j, m in enumerate(meses)}
 
-        # llenar
+        # llenar z y custom; matriz de hover (procesamiento / comisiones)
+        hovertext = [["" for _ in meses] for _ in y_envios]
+        usar_hover_texto = "estado_label" in dff.columns or hover_z_default is not None
+
         for _, r in dff.iterrows():
             envio = r.get("envio_nombre") or "(sin envío)"
             cuota = int(r.get("cuota")) if pd.notna(r.get("cuota")) else None
@@ -759,6 +785,14 @@ def build_heatmap_cobertura(df: pd.DataFrame, anio: int | None = None) -> go.Fig
                 "tiene_liquidacion": bool(r.get("tiene_liquidacion")) if "tiene_liquidacion" in r else None,
                 "tiene_cobranza": bool(r.get("tiene_cobranza")) if "tiene_cobranza" in r else None,
             }
+            if usar_hover_texto and "estado_label" in dff.columns and pd.notna(r.get("estado_label")):
+                hovertext[i][j] = str(r.get("estado_label"))
+
+        if hover_z_default:
+            for ii in range(len(y_envios)):
+                for jj in range(len(meses)):
+                    if not hovertext[ii][jj]:
+                        hovertext[ii][jj] = hover_z_default.get(z[ii][jj], "")
 
         # Colorscale discreta (0..3)
         colorscale = [
@@ -783,21 +817,27 @@ def build_heatmap_cobertura(df: pd.DataFrame, anio: int | None = None) -> go.Fig
             [1.0, "#B4B2A9"],
         ]
 
-        fig = go.Figure(
-            go.Heatmap(
-                z=z,
-                x=x_labels,
-                y=y_envios,
-                zmin=0,
-                zmax=3,
-                colorscale=colorscale,
-                showscale=False,
-                customdata=custom,
-                hovertemplate="<b>%{y}</b><br>Mes: %{x}<br>Estado: %{z}<extra></extra>",
-            )
+        hm_kwargs = dict(
+            z=z,
+            x=x_labels,
+            y=y_envios,
+            zmin=0,
+            zmax=3,
+            colorscale=colorscale,
+            showscale=False,
+            customdata=custom,
         )
+        if usar_hover_texto and (
+            hover_z_default is not None or any(any(c for c in row) for row in hovertext)
+        ):
+            hm_kwargs["hovertext"] = hovertext
+            hm_kwargs["hovertemplate"] = "<b>%{y}</b><br>Mes: %{x}<br>%{hovertext}<extra></extra>"
+        else:
+            hm_kwargs["hovertemplate"] = "<b>%{y}</b><br>Mes: %{x}<br>Estado: %{z}<extra></extra>"
+
+        fig = go.Figure(go.Heatmap(**hm_kwargs))
         fig.update_layout(
-            title="Cobertura de cobranzas por envío",
+            title=title or "Cobertura de cobranzas por envío",
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             height=max(420, 26 * len(y_envios) + 120),

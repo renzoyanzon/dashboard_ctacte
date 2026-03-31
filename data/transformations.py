@@ -23,6 +23,7 @@ from config import (
     get_parametros_entidad,
     get_regla_devoluciones_cobranza,
     get_nombre_entidad,
+    procesamiento_usa_im_gc,
 )
 
 
@@ -344,11 +345,12 @@ def build_pivot_entidad(df: pd.DataFrame, idtrabajo: int, idenvio: int, anio: in
             .groupby("cuota")["haber"]
             .sum()
         )
-        com = (
-            df_anio[df_anio["clase"].isin(CLASES_COMISION)]
-            .groupby("cuota")["debe"]
-            .sum()
-        )
+        df_comision = df_anio[df_anio["clase"].isin(CLASES_COMISION)].copy()
+        if procesamiento_usa_im_gc(int(idtrabajo)):
+            df_comision = df_comision[
+                ~((df_comision["tipo"].astype(str).str.upper() == "IM") & (df_comision["clase"] == "GC"))
+            ]
+        com = df_comision.groupby("cuota")["haber"].sum()
 
         meses_cols = list(range(1, 13))
         liq = liq.reindex(meses_cols, fill_value=0.0)
@@ -578,4 +580,254 @@ def detectar_faltantes(df: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         print(f"Error en detectar_faltantes(): {e}")
         return pd.DataFrame()
+
+
+def _importe_procesamiento_haber(idtrabajo: int, g: pd.DataFrame) -> float:
+    """Procesamiento: IM+GP (haber) salvo entidades que usan IM+GC (haber)."""
+    if procesamiento_usa_im_gc(idtrabajo):
+        return float(g[(g["tipo"] == "IM") & (g["clase"] == "GC")]["haber"].sum())
+    return float(g[(g["tipo"] == "IM") & (g["clase"] == "GP")]["haber"].sum())
+
+
+def _importe_comision_im_gc_haber(idtrabajo: int, g: pd.DataFrame) -> float:
+    """Comisión liquidación IM+GC en haber (no aplica IM+GC en entidades de solo procesamiento)."""
+    if procesamiento_usa_im_gc(idtrabajo):
+        return 0.0
+    return float(g[(g["tipo"] == "IM") & (g["clase"] == "GC")]["haber"].sum())
+
+
+def detectar_alertas_procesamiento_comision(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Control de carga: faltantes de registro de procesamiento y de comisiones (IM+GC en haber).
+
+    - Procesamiento: ``proc > 0``. Con cobranza real, debe existir IM+GP en haber, o IM+GC
+      en haber si la entidad está en ``PROCESAMIENTO_USA_IM_GC_IDS``.
+    - Comisiones: ``com > 0``, excluye las entidades que usan IM+GC solo para procesamiento.
+      Con liquidación y cobranza, debe existir IM+GC con importe en haber.
+    """
+    try:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        dff = df.copy()
+        if "idenvio" not in dff.columns and "envio" in dff.columns:
+            dff["idenvio"] = dff["envio"]
+
+        for col in ["idtrabajo", "idenvio", "anio", "cuota"]:
+            if col in dff.columns:
+                dff[col] = pd.to_numeric(dff[col], errors="coerce")
+
+        if "tipo" in dff.columns:
+            dff["tipo"] = dff["tipo"].astype(str).str.strip().str.upper()
+        else:
+            dff["tipo"] = ""
+        if "clase" in dff.columns:
+            dff["clase"] = dff["clase"].astype(str).str.strip().str.upper()
+        else:
+            dff["clase"] = ""
+
+        dff["debe"] = pd.to_numeric(dff["debe"], errors="coerce").fillna(0.0)
+        dff["haber"] = pd.to_numeric(dff["haber"], errors="coerce").fillna(0.0)
+
+        base_cols = ["idtrabajo", "idenvio", "anio", "cuota"]
+        filas = []
+
+        for key, g in dff.groupby(base_cols, dropna=False):
+            idt, ide, anio, cuota = key
+            if pd.isna(idt) or pd.isna(ide):
+                continue
+
+            params = get_parametros_entidad(int(idt), int(ide))
+            if not params:
+                continue
+
+            proc = params.get("proc")
+            com = params.get("com")
+            tiene_proc = proc is not None and float(proc) > 0
+            tiene_com = com is not None and float(com) > 0
+
+            mask_liq = g["tipo"].isin(TIPOS_LIQUIDACION_REAL)
+            mask_cob = g["tipo"].isin(TIPOS_COBRANZA_REAL)
+            tiene_liquidacion = bool(mask_liq.any())
+            tiene_cobranza = bool(mask_cob.any())
+
+            imp_proc = _importe_procesamiento_haber(int(idt), g)
+            imp_com = _importe_comision_im_gc_haber(int(idt), g)
+
+            entidad_nom = None
+            envio_nom = None
+            if "entidad_nombre" in g.columns and g["entidad_nombre"].notna().any():
+                entidad_nom = g["entidad_nombre"].dropna().astype(str).iloc[0]
+            if "envio_nombre" in g.columns and g["envio_nombre"].notna().any():
+                envio_nom = g["envio_nombre"].dropna().astype(str).iloc[0]
+
+            if tiene_proc and tiene_liquidacion and tiene_cobranza and imp_proc <= 0:
+                filas.append(
+                    {
+                        "tipo_alerta": "PROC",
+                        "idtrabajo": int(idt),
+                        "idenvio": int(ide),
+                        "anio": int(anio),
+                        "cuota": int(cuota),
+                        "entidad_nombre": entidad_nom or envio_nom or str(idt),
+                        "envio_nombre": envio_nom or entidad_nom or str(ide),
+                    }
+                )
+
+            if (
+                tiene_com
+                and tiene_liquidacion
+                and tiene_cobranza
+                and not procesamiento_usa_im_gc(int(idt))
+                and imp_com <= 0
+            ):
+                filas.append(
+                    {
+                        "tipo_alerta": "GC",
+                        "idtrabajo": int(idt),
+                        "idenvio": int(ide),
+                        "anio": int(anio),
+                        "cuota": int(cuota),
+                        "entidad_nombre": entidad_nom or envio_nom or str(idt),
+                        "envio_nombre": envio_nom or entidad_nom or str(ide),
+                    }
+                )
+
+        if not filas:
+            return pd.DataFrame()
+
+        out = pd.DataFrame(filas)
+        out = out.sort_values(["tipo_alerta", "entidad_nombre", "anio", "cuota"])
+        return out
+    except Exception as e:
+        print(f"Error en detectar_alertas_procesamiento_comision(): {e}")
+        return pd.DataFrame()
+
+
+def construir_periodos_heatmap_proc_comision(
+    df_mov: pd.DataFrame, df_periodos: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Filas para heatmaps de control (misma forma que ``build_heatmap_cobertura``):
+    ``estado_num``: 0 ok (liq+cob+registro), 1 liquidación sin cobranza, 2 liq+cob sin registro,
+    3 sin liquidación o sin datos relevantes.
+
+    Solo incluye envíos/períodos que aplican según ``PARAMETROS_ENTIDAD``:
+    - Procesamiento: entidades con ``proc > 0``.
+    - Comisiones: entidades con ``com > 0`` (excluye las que solo registran IM+GC como procesamiento).
+
+    Returns:
+        (df_proc, df_com) con columnas envio_nombre, entidad_nombre, anio, cuota, estado_num, …
+    """
+    try:
+        if df_mov is None or df_mov.empty or df_periodos is None or df_periodos.empty:
+            return pd.DataFrame(), pd.DataFrame()
+
+        dff = df_mov.copy()
+        if "idenvio" not in dff.columns and "envio" in dff.columns:
+            dff["idenvio"] = dff["envio"]
+        if "tipo" in dff.columns:
+            dff["tipo"] = dff["tipo"].astype(str).str.strip().str.upper()
+        else:
+            dff["tipo"] = ""
+        if "clase" in dff.columns:
+            dff["clase"] = dff["clase"].astype(str).str.strip().str.upper()
+        else:
+            dff["clase"] = ""
+        dff["haber"] = pd.to_numeric(dff["haber"], errors="coerce").fillna(0.0)
+        for col in ["idtrabajo", "idenvio", "anio", "cuota"]:
+            if col in dff.columns:
+                dff[col] = pd.to_numeric(dff[col], errors="coerce")
+
+        rows_p = []
+        rows_c = []
+        base_cols = ["idtrabajo", "idenvio", "anio", "cuota"]
+
+        for _, r in df_periodos.iterrows():
+            idt = int(r["idtrabajo"])
+            ide = int(r["idenvio"])
+            anio = int(r["anio"])
+            cuota = int(r["cuota"])
+            g = dff[
+                (dff["idtrabajo"] == idt)
+                & (dff["idenvio"] == ide)
+                & (dff["anio"] == anio)
+                & (dff["cuota"] == cuota)
+            ]
+            params = get_parametros_entidad(idt, ide)
+            tiene_liquidacion = bool(r.get("tiene_liquidacion"))
+            tiene_cobranza = bool(r.get("tiene_cobranza"))
+
+            envio = str(r.get("envio_nombre") or "(sin envío)")
+            entidad = str(r.get("entidad_nombre") or envio)
+
+            proc = params.get("proc") if params else None
+            com = params.get("com") if params else None
+            aplica_proc = bool(params and proc is not None and float(proc) > 0)
+            aplica_com = bool(
+                params
+                and com is not None
+                and float(com) > 0
+                and not procesamiento_usa_im_gc(idt)
+            )
+
+            # Procesamiento (solo filas donde aplica control de proc)
+            # 0 verde: liq + cob + registro | 1 amarillo: liq sin cob | 2 rojo: liq+cob sin registro | 3 gris: sin liq
+            if aplica_proc:
+                if not tiene_liquidacion:
+                    ep = 3
+                    lbl_p = "Sin liquidación en el período o sin movimiento relevante"
+                elif not tiene_cobranza:
+                    ep = 1
+                    lbl_p = "Liquidación registrada: aún sin cobranza"
+                elif _importe_procesamiento_haber(idt, g) > 0:
+                    ep = 0
+                    lbl_p = "OK: liquidación, cobranza y gasto de procesamiento (IM+GP o IM+GC en haber)"
+                else:
+                    ep = 2
+                    lbl_p = "Liquidación y cobranza: falta registro de procesamiento"
+                rows_p.append(
+                    {
+                        "envio_nombre": envio,
+                        "entidad_nombre": entidad,
+                        "anio": anio,
+                        "cuota": cuota,
+                        "estado_num": ep,
+                        "estado_label": lbl_p,
+                        "tiene_liquidacion": tiene_liquidacion,
+                        "tiene_cobranza": tiene_cobranza,
+                    }
+                )
+
+            # Comisiones (solo entidades con comisión en config; sin IM+GC “solo procesamiento”)
+            if aplica_com:
+                if not tiene_liquidacion:
+                    ec = 3
+                    lbl_c = "Sin liquidación en el período o sin movimiento relevante"
+                elif not tiene_cobranza:
+                    ec = 1
+                    lbl_c = "Liquidación registrada: aún sin cobranza"
+                elif _importe_comision_im_gc_haber(idt, g) > 0:
+                    ec = 0
+                    lbl_c = "OK: liquidación, cobranza y comisión (IM+GC en haber)"
+                else:
+                    ec = 2
+                    lbl_c = "Liquidación y cobranza: falta comisión (IM+GC en haber)"
+                rows_c.append(
+                    {
+                        "envio_nombre": envio,
+                        "entidad_nombre": entidad,
+                        "anio": anio,
+                        "cuota": cuota,
+                        "estado_num": ec,
+                        "estado_label": lbl_c,
+                        "tiene_liquidacion": tiene_liquidacion,
+                        "tiene_cobranza": tiene_cobranza,
+                    }
+                )
+
+        return pd.DataFrame(rows_p), pd.DataFrame(rows_c)
+    except Exception as e:
+        print(f"Error en construir_periodos_heatmap_proc_comision(): {e}")
+        return pd.DataFrame(), pd.DataFrame()
 

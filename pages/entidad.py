@@ -704,10 +704,13 @@ def register_callbacks(app):
             df = pd.DataFrame(mov_records or [])
             if df.empty:
                 return _empty_fig("Sin datos"), _empty_fig("Sin datos"), _empty_fig("Sin datos")
+            idt = None
+            if "idtrabajo" in df.columns and df["idtrabajo"].notna().any():
+                idt = int(pd.to_numeric(df["idtrabajo"].iloc[0], errors="coerce"))
             return (
                 build_torta_subgrupos(df, anio),
                 build_torta_formas_pago(df, anio),
-                build_barras_comisiones(df, anio),
+                build_barras_comisiones(df, anio, idtrabajo=idt),
             )
         except Exception as e:
             return _empty_fig("Error"), _empty_fig("Error"), _empty_fig("Error")

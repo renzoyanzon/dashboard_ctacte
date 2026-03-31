@@ -11,10 +11,16 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output, State, dash_table
 
 from components.kpis import kpi_card
-from components.charts import build_heatmap_cobertura
+from components.charts import HOVER_HEATMAP_PROC_COM, build_heatmap_cobertura
 from config import MESES, VENCIMIENTOS
 from db.queries import get_envios_trabajo, get_movimientos_control
-from data.transformations import detectar_faltantes, calcular_vencimiento, calcular_estado_vencimiento
+from data.transformations import (
+    construir_periodos_heatmap_proc_comision,
+    detectar_alertas_procesamiento_comision,
+    detectar_faltantes,
+    calcular_vencimiento,
+    calcular_estado_vencimiento,
+)
 
 
 ESTADOS_OPTS = [
@@ -56,6 +62,8 @@ def layout():
             ),
             dcc.Store(id="control-store-data"),
             dcc.Store(id="control-store-periodos"),
+            dcc.Store(id="control-store-heatmap-proc"),
+            dcc.Store(id="control-store-heatmap-com"),
             dbc.Row(
                 [
                     dbc.Col(html.Div(id="kpi-vencidos"), md=3),
@@ -104,6 +112,63 @@ def layout():
                                     dcc.Loading(
                                         dcc.Graph(
                                             id="control-heatmap",
+                                            figure=_empty_fig("Cargando..."),
+                                        )
+                                    )
+                                ),
+                            ]
+                        ),
+                        md=12,
+                    )
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            [
+                                dbc.CardHeader("Heatmap — registro de procesamiento"),
+                                dbc.CardBody(
+                                    [
+                                        dcc.Loading(
+                                            dcc.Graph(
+                                                id="control-heatmap-proc",
+                                                figure=_empty_fig("Cargando..."),
+                                            )
+                                        ),
+                                        html.P(
+                                            [
+                                                html.Span("Verde: ", style={"color": "#1D9E75", "fontWeight": "bold"}),
+                                                "liquidación, cobranza y registro de procesamiento. ",
+                                                html.Span("Amarillo: ", style={"color": "#EF9F27", "fontWeight": "bold"}),
+                                                "liquidación sin cobranza aún. ",
+                                                html.Span("Rojo: ", style={"color": "#E24B4A", "fontWeight": "bold"}),
+                                                "liquidación y cobranza sin registro. ",
+                                                html.Span("Gris: ", style={"color": "#B4B2A9", "fontWeight": "bold"}),
+                                                "sin liquidación o sin datos en el período.",
+                                            ],
+                                            className="small text-muted mt-2 mb-0",
+                                        ),
+                                    ]
+                                ),
+                            ]
+                        ),
+                        md=12,
+                    )
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            [
+                                dbc.CardHeader("Heatmap — registro de comisiones liquidación (IM+GC)"),
+                                dbc.CardBody(
+                                    dcc.Loading(
+                                        dcc.Graph(
+                                            id="control-heatmap-com",
                                             figure=_empty_fig("Cargando..."),
                                         )
                                     )
@@ -198,6 +263,8 @@ def register_callbacks(app):
         [
             Output("control-store-data", "data"),
             Output("control-store-periodos", "data"),
+            Output("control-store-heatmap-proc", "data"),
+            Output("control-store-heatmap-com", "data"),
             Output("control-warnings", "children"),
         ],
         [Input("control-anio", "value")],
@@ -208,7 +275,7 @@ def register_callbacks(app):
         """
         try:
             if not anio:
-                return None, None, None
+                return None, None, None, None, None
 
             # Verificación de envíos en trabajo vs config.VENCIMIENTOS
             df_env = get_envios_trabajo()
@@ -237,12 +304,51 @@ def register_callbacks(app):
 
             df_mov = get_movimientos_control(int(anio))
             if df_mov is None or df_mov.empty:
-                return [], [], warns
+                return [], [], [], [], warns
 
-            # Normalizar
             for col in ["anio", "cuota", "idtrabajo", "idenvio", "debe", "haber"]:
                 if col in df_mov.columns:
                     df_mov[col] = pd.to_numeric(df_mov[col], errors="coerce")
+
+            df_alert_pc = detectar_alertas_procesamiento_comision(df_mov)
+            if df_alert_pc is not None and not df_alert_pc.empty:
+                max_items = 18
+
+                def _fmt_grupo(sub: pd.DataFrame, titulo: str, color: str, pie: str | None = None):
+                    if sub.empty:
+                        return None
+                    items = []
+                    for _, r in sub.head(max_items).iterrows():
+                        per = f"{int(r['cuota'])}/{int(r['anio'])}"
+                        items.append(html.Li(f"{r['entidad_nombre']} — {per}"))
+                    more = len(sub) - max_items
+                    body = [html.Strong(titulo), html.Ul(items)]
+                    if more > 0:
+                        body.append(html.P(f"… y {more} más.", className="mb-0 small"))
+                    if pie:
+                        body.append(html.P(pie, className="mb-0 small text-muted mt-1"))
+                    return dbc.Alert(body, color=color, className="mb-2")
+
+                proc_df = df_alert_pc[df_alert_pc["tipo_alerta"] == "PROC"]
+                gc_df = df_alert_pc[df_alert_pc["tipo_alerta"] == "GC"]
+                a_proc = _fmt_grupo(
+                    proc_df,
+                    "Falta registro de gasto de procesamiento (IM+GP o IM+GC en haber, según entidad): "
+                    "hay cobranza en el período y no hay el movimiento esperado.",
+                    "warning",
+                    pie="Solo entidades con porcentaje de procesamiento mayor a cero en configuración.",
+                )
+                a_gc = _fmt_grupo(
+                    gc_df,
+                    "Falta registro de comisiones liquidación (tipo IM, clase GC en haber): hay liquidación "
+                    "y cobranza en el período y no hay movimiento IM+GC.",
+                    "warning",
+                    pie="Solo entidades con porcentaje de comisión mayor a cero (excluye IM+GC de solo procesamiento).",
+                )
+                if a_proc is not None:
+                    warns.append(a_proc)
+                if a_gc is not None:
+                    warns.append(a_gc)
 
             # Detectar faltantes (por idtrabajo+idenvio+anio+cuota)
             df_falt = detectar_faltantes(df_mov)
@@ -307,6 +413,10 @@ def register_callbacks(app):
             periodos["dias_vencido"] = dias
             periodos["estado_num"] = estados_num
 
+            df_hm_proc, df_hm_com = construir_periodos_heatmap_proc_comision(df_mov, periodos)
+            rec_proc = df_hm_proc.to_dict("records") if df_hm_proc is not None and not df_hm_proc.empty else []
+            rec_com = df_hm_com.to_dict("records") if df_hm_com is not None and not df_hm_com.empty else []
+
             # Dataset para tabla: usar faltantes + estado calculado
             # Tomamos solo filas donde falta cobranza o falta liquidación (detectadas)
             if df_falt is None:
@@ -336,9 +446,15 @@ def register_callbacks(app):
                         else df_falt.get("entidad_nombre_falt")
                     )
 
-            return df_falt.to_dict("records"), periodos.to_dict("records"), warns
+            return (
+                df_falt.to_dict("records"),
+                periodos.to_dict("records"),
+                rec_proc,
+                rec_com,
+                warns,
+            )
         except Exception as e:
-            return [], [], dbc.Alert(f"Error cargando datos: {str(e)}", color="danger")
+            return [], [], [], [], dbc.Alert(f"Error cargando datos: {str(e)}", color="danger")
 
     @app.callback(
         [
@@ -347,17 +463,28 @@ def register_callbacks(app):
             Output("kpi-proximo", "children"),
             Output("kpi-aldia", "children"),
             Output("control-heatmap", "figure"),
+            Output("control-heatmap-proc", "figure"),
+            Output("control-heatmap-com", "figure"),
             Output("control-tabla", "data"),
             Output("control-tabla", "style_data_conditional"),
         ],
         [
             Input("control-store-data", "data"),
             Input("control-store-periodos", "data"),
+            Input("control-store-heatmap-proc", "data"),
+            Input("control-store-heatmap-com", "data"),
             Input("control-estados", "value"),
             Input("control-anio", "value"),
         ],
     )
-    def actualizar_vista(falt_records, periodos_records, estados_sel, anio):
+    def actualizar_vista(
+        falt_records,
+        periodos_records,
+        hm_proc_records,
+        hm_com_records,
+        estados_sel,
+        anio,
+    ):
         try:
             estados_sel = estados_sel or ["vencido", "pendiente", "sin_config"]
             df_falt = pd.DataFrame(falt_records or [])
@@ -370,6 +497,8 @@ def register_callbacks(app):
                     kpi_card("Total pendientes", "0", "warning"),
                     kpi_card("Próximo vencimiento", "-", "secondary"),
                     kpi_card("Porcentaje al día", "0%", "success"),
+                    fig,
+                    fig,
                     fig,
                     [],
                     [],
@@ -401,8 +530,22 @@ def register_callbacks(app):
             k3 = kpi_card("Próximo vencimiento", prox, "primary" if prox != "-" else "secondary")
             k4 = kpi_card("Porcentaje al día", pct_str, "success")
 
-            # Heatmap
+            # Heatmaps
             fig = build_heatmap_cobertura(df_per, anio=anio)
+            df_proc_hm = pd.DataFrame(hm_proc_records or [])
+            df_com_hm = pd.DataFrame(hm_com_records or [])
+            fig_proc = build_heatmap_cobertura(
+                df_proc_hm,
+                anio=anio,
+                title="Procesamiento: registro esperado (IM+GP o IM+GC en haber)",
+                hover_z_default=HOVER_HEATMAP_PROC_COM,
+            )
+            fig_com = build_heatmap_cobertura(
+                df_com_hm,
+                anio=anio,
+                title="Comisiones: IM+GC en haber (excluye entidades con solo procesamiento IM+GC)",
+                hover_z_default=HOVER_HEATMAP_PROC_COM,
+            )
 
             # Tabla (filtro por estados checklist)
             if not df_falt.empty and "estado" in df_falt.columns:
@@ -440,14 +583,17 @@ def register_callbacks(app):
                 {"if": {"filter_query": "{Estado} = 'sin_config'", "column_id": "Estado"}, "backgroundColor": "#E9ECEF", "color": "#5F5E5A", "fontWeight": "bold"},
             ]
 
-            return k1, k2, k3, k4, fig, tabla, styles
+            return k1, k2, k3, k4, fig, fig_proc, fig_com, tabla, styles
         except Exception as e:
+            ef = _empty_fig(f"Error: {str(e)}")
             return (
                 kpi_card("Total vencidos", "-", "danger"),
                 kpi_card("Total pendientes", "-", "warning"),
                 kpi_card("Próximo vencimiento", "-", "secondary"),
                 kpi_card("Porcentaje al día", "-", "success"),
-                _empty_fig(f"Error: {str(e)}"),
+                ef,
+                ef,
+                ef,
                 [],
                 [],
             )
